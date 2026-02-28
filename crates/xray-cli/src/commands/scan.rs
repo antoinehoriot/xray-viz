@@ -45,6 +45,9 @@ pub struct ScanArgs {
     /// Detect and report circular dependencies
     #[arg(long)]
     pub cycles: bool,
+    /// Detect and report orphan files (zero importers — dead code candidates)
+    #[arg(long)]
+    pub orphans: bool,
 }
 
 pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -205,6 +208,29 @@ pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
                     .filter_map(|id| graph.nodes.iter().find(|n| &n.id == id).map(|n| n.path.as_str()))
                     .collect();
                 eprintln!("  {}. {} -> {}", i + 1, paths.join(" -> "), paths.first().unwrap_or(&"?"));
+            }
+        }
+    }
+
+    if args.orphans {
+        let orphans = xray_core::graph::orphans::detect_orphans(&graph);
+        let dead: Vec<_> = orphans.iter().filter(|o| !o.is_entry_point).collect();
+        let entry_orphans: Vec<_> = orphans.iter().filter(|o| o.is_entry_point).collect();
+
+        if orphans.is_empty() {
+            eprintln!("No orphan files detected.");
+        } else {
+            if !dead.is_empty() {
+                eprintln!("Found {} orphan file(s) (zero importers, dead code candidates):", dead.len());
+                for o in &dead {
+                    eprintln!("  {}", o.path);
+                }
+            }
+            if !entry_orphans.is_empty() {
+                eprintln!("Found {} entry-point file(s) with no importers (expected):", entry_orphans.len());
+                for o in &entry_orphans {
+                    eprintln!("  {} [entry point]", o.path);
+                }
             }
         }
     }
