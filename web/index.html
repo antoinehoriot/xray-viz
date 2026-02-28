@@ -29,13 +29,32 @@
     <div id="node-detail">
       <span id="node-path">Select a node</span>
       <span id="node-lang"></span>
+      <span id="node-fn-sig" style="display:none"></span>
       <button id="blast-radius-btn" disabled>Blast Radius ▶</button>
     </div>
     <div id="graph-stats">
       <span id="stat-files">0 files</span>
       <span id="stat-edges">0 edges</span>
+      <span id="stat-functions" style="display:none">0 fns</span>
     </div>
   </footer>
+
+  <!-- Pro feature gate modal -->
+  <div id="pro-gate-overlay" class="pro-gate-overlay" style="display:none">
+    <div class="pro-gate-modal">
+      <div class="pro-gate-header">
+        <span class="pro-badge">PRO</span>
+        <h2>Function-Level Analysis</h2>
+      </div>
+      <p>Drill into individual functions, classes, and call graphs. Enter your Xray Pro license key to unlock.</p>
+      <input id="pro-key-input" type="text" placeholder="xray-pro-xxxxxxxx" autocomplete="off" spellcheck="false" />
+      <div class="pro-gate-actions">
+        <button id="pro-key-submit">Unlock Pro</button>
+        <button id="pro-gate-close">Cancel</button>
+      </div>
+      <a href="#" class="pro-upgrade-link">Get Xray Pro →</a>
+    </div>
+  </div>
 
   <script type="module" src="main.js"></script>
 </body>
