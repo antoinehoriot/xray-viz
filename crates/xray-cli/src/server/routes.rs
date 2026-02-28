@@ -1,36 +1,57 @@
 //! Axum HTTP routes for the embedded server.
 //!
 //! Routes:
-//!   GET /health        — health check
-//!   GET /api/graph     — full XrayGraph JSON
-//!   GET /*             — static file serving from web/dist (if present),
-//!                        otherwise a minimal inline fallback UI
+//!   GET /health                        — health check
+//!   GET /api/graph                     — full XrayGraph JSON
+//!   GET /api/functions?file=<path>     — lazy function-level subgraph for a file
+//!   GET /*                             — static file serving from web/dist (if present),
+//!                                        otherwise a minimal inline fallback UI
 //!
 //! Listens on 127.0.0.1 only (not 0.0.0.0) for security.
 
 use axum::{
-    extract::State,
+    extract::{Query, State},
+    http::StatusCode,
     response::{Html, IntoResponse, Response},
     routing::get,
     Router,
 };
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tower_http::services::ServeDir;
 
 /// Shared graph JSON state.
 pub type GraphState = Arc<String>;
 
+/// Per-file function/class data for lazy loading.
+/// Map key: relative file path. Value: serialized JSON for the /api/functions response.
+pub type FunctionsState = Arc<HashMap<String, serde_json::Value>>;
+
+/// Combined application state shared across all routes.
+#[derive(Clone)]
+pub struct AppState {
+    pub graph_json: GraphState,
+    pub functions: FunctionsState,
+}
+
 /// Build the axum router.
 ///
 /// - `graph_json`: serialized XrayGraph (served at /api/graph)
+/// - `functions`: per-file function/class data (served at /api/functions)
 /// - `web_dist`: optional path to web/dist for full UI assets;
 ///   if None, serves a minimal fallback HTML
-pub fn build_router(graph_json: GraphState, web_dist: Option<PathBuf>) -> Router {
-    // State-dependent routes — bake state in first.
+pub fn build_router(
+    graph_json: GraphState,
+    functions: FunctionsState,
+    web_dist: Option<PathBuf>,
+) -> Router {
+    let state = AppState { graph_json, functions };
+
+    // State-dependent routes
     let base = Router::new()
         .route("/health", get(health))
         .route("/api/graph", get(get_graph))
-        .with_state(graph_json);
+        .route("/api/functions", get(get_functions))
+        .with_state(state);
 
     // Static file serving (no state needed).
     match web_dist {
@@ -47,8 +68,36 @@ async fn health() -> &'static str {
     "ok"
 }
 
-async fn get_graph(State(json): State<GraphState>) -> Response {
-    ([("content-type", "application/json")], json.as_str().to_string()).into_response()
+async fn get_graph(State(state): State<AppState>) -> Response {
+    (
+        [("content-type", "application/json")],
+        state.graph_json.as_str().to_string(),
+    )
+        .into_response()
+}
+
+/// GET /api/functions?file=<relative_path>
+///
+/// Returns the function-level subgraph for a single file:
+/// `{ "file": "...", "functions": [...], "classes": [...] }`
+async fn get_functions(
+    State(state): State<AppState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let file = match params.get("file") {
+        Some(f) => f,
+        None => {
+            return (StatusCode::BAD_REQUEST, "missing 'file' query parameter").into_response();
+        }
+    };
+    match state.functions.get(file) {
+        Some(data) => (
+            [("content-type", "application/json")],
+            data.to_string(),
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, format!("file not found: {file}")).into_response(),
+    }
 }
 
 async fn serve_fallback() -> Html<&'static str> {
@@ -181,7 +230,8 @@ mod tests {
     #[test]
     fn test_build_router_no_panic() {
         // Verifies build_router constructs successfully with no web dir.
-        let _router = build_router(Arc::new("{}".to_string()), None);
+        let functions: FunctionsState = Arc::new(HashMap::new());
+        let _router = build_router(Arc::new("{}".to_string()), functions, None);
     }
 
     #[test]

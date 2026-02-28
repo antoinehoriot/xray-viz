@@ -165,7 +165,7 @@ pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // Build graph using petgraph StableGraph
     let builder = GraphBuilder::new(root.to_string_lossy().to_string());
-    let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits);
+    let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits, &args.level);
 
     // Save bincode graph cache for instant re-serve
     let graph_bin_path = cache_dir.join("graph.bin");

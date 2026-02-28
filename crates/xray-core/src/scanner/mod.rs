@@ -45,7 +45,7 @@ pub enum ExportKind {
     Star,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FunctionDecl {
     pub name: String,
     pub line_start: u32,
@@ -55,14 +55,14 @@ pub struct FunctionDecl {
     pub is_async: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ClassDecl {
     pub name: String,
     pub line_start: u32,
     pub line_end: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CallSite {
     pub callee: String,
     pub resolved_node_id: Option<String>,

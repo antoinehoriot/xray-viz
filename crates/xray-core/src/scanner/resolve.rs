@@ -23,6 +23,7 @@ pub fn resolve_imports(file_asts: &mut Vec<FileAst>, known_paths: &HashSet<Strin
                 "rust" => resolve_rust(&import.specifier, &file_dir, known_paths),
                 "python" => resolve_python(&import.specifier, &file_dir, known_paths),
                 "go" => resolve_go(&import.specifier, &file_dir, known_paths),
+                "java" => resolve_java(&import.specifier, known_paths),
                 _ => None,
             };
         }
@@ -249,6 +250,29 @@ fn resolve_go(specifier: &str, file_dir: &str, known_paths: &HashSet<String>) ->
     None
 }
 
+// ── Java ───────────────────────────────────────────────────────────────────────
+
+/// Resolve Java import declarations to file paths.
+///
+/// Java imports are fully-qualified class names like `com.example.Foo`.
+/// We convert the dotted path to a slash path and append `.java`.
+/// Wildcard imports (`com.example.*`) are not resolvable to a single file.
+fn resolve_java(specifier: &str, known_paths: &HashSet<String>) -> Option<String> {
+    // Wildcard or star imports cannot be resolved to a single file
+    if specifier.ends_with('*') {
+        return None;
+    }
+
+    // Convert `com.example.Foo` → `com/example/Foo.java`
+    let path = format!("{}.java", specifier.replace('.', "/"));
+    if known_paths.contains(&path) {
+        return Some(path);
+    }
+
+    // Also try without the last component (in case specifier is a package)
+    None
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -367,6 +391,29 @@ mod tests {
     fn python_ignores_absolute() {
         let paths = known(&["os.py"]);
         let result = resolve_python("os", "mypackage", &paths);
+        assert_eq!(result, None);
+    }
+
+    // ── Java ──────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn java_resolves_qualified_class() {
+        let paths = known(&["com/example/Foo.java"]);
+        let result = resolve_java("com.example.Foo", &paths);
+        assert_eq!(result, Some("com/example/Foo.java".to_string()));
+    }
+
+    #[test]
+    fn java_ignores_wildcard_import() {
+        let paths = known(&["com/example/Foo.java"]);
+        let result = resolve_java("com.example.*", &paths);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn java_ignores_missing_class() {
+        let paths = known(&["com/example/Bar.java"]);
+        let result = resolve_java("com.example.Foo", &paths);
         assert_eq!(result, None);
     }
 

@@ -21,6 +21,8 @@ pub enum EdgeKind {
     Call,
     Inheritance,
     ReExport,
+    /// File → Function/Class containment edge (function-level mode)
+    Contains,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

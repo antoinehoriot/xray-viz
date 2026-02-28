@@ -84,17 +84,22 @@ impl GraphBuilder {
     /// Build XrayGraph from FileAsts produced by the scanner.
     /// Uses petgraph::StableGraph for deduplication and internal graph ops,
     /// then exports to the flat XrayGraph format for serialization.
+    ///
+    /// `level`: "file" for file-only nodes, "function" to also emit Function/Class nodes
+    ///          with Contains edges to their parent file.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn build_from_asts(
         self,
         asts: Vec<FileAst>,
         parse_duration_ms: u64,
         cache_hits: u64,
+        level: &str,
     ) -> XrayGraph {
+        let function_level = level == "function";
         let mut inner: StableGraph<Node, (), Directed> = StableGraph::new();
         let mut node_map: HashMap<NodeId, NodeIndex> = HashMap::new();
 
-        // First pass: add all file nodes
+        // First pass: add all file nodes (and optionally function/class nodes)
         for ast in &asts {
             let node_id = node_id_from_path(&ast.path);
             if node_map.contains_key(&node_id) {
@@ -123,9 +128,63 @@ impl GraphBuilder {
             };
             let idx = inner.add_node(node);
             node_map.insert(node_id, idx);
+
+            if function_level {
+                // Add Function nodes
+                for func in &ast.functions {
+                    let func_key = format!("{}::fn::{}", ast.path, func.name);
+                    let func_id = node_id_from_path(&func_key);
+                    if node_map.contains_key(&func_id) {
+                        continue;
+                    }
+                    let fn_node = Node {
+                        id: func_id.clone(),
+                        kind: NodeKind::Function,
+                        label: func.name.clone(),
+                        path: ast.path.clone(),
+                        language: ast.language.clone(),
+                        line_start: Some(func.line_start),
+                        line_end: Some(func.line_end),
+                        loc: Some(func.line_end.saturating_sub(func.line_start) + 1),
+                        metadata: NodeMetadata {
+                            exports: vec![],
+                            is_entry_point: false,
+                            tags: vec![],
+                        },
+                    };
+                    let fn_idx = inner.add_node(fn_node);
+                    node_map.insert(func_id, fn_idx);
+                }
+
+                // Add Class nodes
+                for class in &ast.classes {
+                    let class_key = format!("{}::class::{}", ast.path, class.name);
+                    let class_id = node_id_from_path(&class_key);
+                    if node_map.contains_key(&class_id) {
+                        continue;
+                    }
+                    let class_node = Node {
+                        id: class_id.clone(),
+                        kind: NodeKind::Class,
+                        label: class.name.clone(),
+                        path: ast.path.clone(),
+                        language: ast.language.clone(),
+                        line_start: Some(class.line_start),
+                        line_end: Some(class.line_end),
+                        loc: Some(class.line_end.saturating_sub(class.line_start) + 1),
+                        metadata: NodeMetadata {
+                            exports: vec![],
+                            is_entry_point: false,
+                            tags: vec![],
+                        },
+                    };
+                    let class_idx = inner.add_node(class_node);
+                    node_map.insert(class_id, class_idx);
+                }
+            }
         }
 
-        // Second pass: build edges from resolved imports
+        // Second pass: build edges from resolved imports (and function containment)
         let mut edges: Vec<Edge> = Vec::new();
         for ast in &asts {
             let source_id = node_id_from_path(&ast.path);
@@ -162,6 +221,35 @@ impl GraphBuilder {
                     });
                 }
             }
+
+            if function_level {
+                // Contains edges: file → function
+                for func in &ast.functions {
+                    let func_key = format!("{}::fn::{}", ast.path, func.name);
+                    let func_id = node_id_from_path(&func_key);
+                    edges.push(Edge {
+                        id: format!("{}→{}:Contains", source_id, func_id),
+                        source: source_id.clone(),
+                        target: func_id,
+                        kind: EdgeKind::Contains,
+                        symbol: Some(func.name.clone()),
+                        resolved: true,
+                    });
+                }
+                // Contains edges: file → class
+                for class in &ast.classes {
+                    let class_key = format!("{}::class::{}", ast.path, class.name);
+                    let class_id = node_id_from_path(&class_key);
+                    edges.push(Edge {
+                        id: format!("{}→{}:Contains", source_id, class_id),
+                        source: source_id.clone(),
+                        target: class_id,
+                        kind: EdgeKind::Contains,
+                        symbol: Some(class.name.clone()),
+                        resolved: true,
+                    });
+                }
+            }
         }
 
         // Extract nodes from petgraph (preserves stable ordering)
@@ -175,6 +263,10 @@ impl GraphBuilder {
             .iter()
             .filter(|n| matches!(n.kind, NodeKind::File))
             .count() as u64;
+        let function_count = nodes
+            .iter()
+            .filter(|n| matches!(n.kind, NodeKind::Function | NodeKind::Class))
+            .count() as u64;
 
         XrayGraph {
             version: 1,
@@ -183,7 +275,7 @@ impl GraphBuilder {
             languages,
             stats: GraphStats {
                 file_count,
-                function_count: 0,
+                function_count,
                 edge_count: edges.len() as u64,
                 parse_duration_ms,
                 cache_hits,
@@ -299,7 +391,7 @@ mod tests {
     #[test]
     fn test_build_from_asts_empty() {
         let builder = GraphBuilder::new("/repo");
-        let graph = builder.build_from_asts(vec![], 0, 0);
+        let graph = builder.build_from_asts(vec![], 0, 0, "file");
         assert_eq!(graph.nodes.len(), 0);
         assert_eq!(graph.edges.len(), 0);
         assert_eq!(graph.version, 1);
@@ -323,9 +415,46 @@ mod tests {
             classes: vec![],
         };
         let builder = GraphBuilder::new("/repo");
-        let graph = builder.build_from_asts(vec![ast.clone(), ast], 0, 0);
+        let graph = builder.build_from_asts(vec![ast.clone(), ast], 0, 0, "file");
         assert_eq!(graph.nodes.len(), 1);
         assert!(graph.nodes[0].metadata.is_entry_point);
         assert_eq!(graph.nodes[0].metadata.exports, vec!["main"]);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_build_from_asts_function_level() {
+        use crate::scanner::{CallSite, ClassDecl, FileAst, FunctionDecl};
+        let ast = FileAst {
+            path: "src/main.ts".to_string(),
+            language: "typescript".to_string(),
+            imports: vec![],
+            exports: vec![],
+            functions: vec![FunctionDecl {
+                name: "doWork".to_string(),
+                line_start: 5,
+                line_end: 10,
+                calls: vec![CallSite {
+                    callee: "helper".to_string(),
+                    resolved_node_id: None,
+                    line: 7,
+                }],
+                is_exported: true,
+                is_async: false,
+            }],
+            classes: vec![ClassDecl {
+                name: "MyClass".to_string(),
+                line_start: 1,
+                line_end: 4,
+            }],
+        };
+        let builder = GraphBuilder::new("/repo");
+        let graph = builder.build_from_asts(vec![ast], 0, 0, "function");
+        // 1 file + 1 function + 1 class = 3 nodes
+        assert_eq!(graph.nodes.len(), 3);
+        assert_eq!(graph.stats.function_count, 2); // function + class
+        // 2 Contains edges (file→function, file→class)
+        assert_eq!(graph.edges.len(), 2);
+        assert!(graph.edges.iter().all(|e| e.kind == EdgeKind::Contains));
     }
 }
