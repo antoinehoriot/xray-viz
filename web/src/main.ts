@@ -11,6 +11,8 @@ import { Engine } from "./engine";
 import type { XrayGraph, FunctionInfo } from "./engine";
 import { selectNode, clearSelection, updateStats, setBlastRadiusHandler, selectFunctionNode } from "./panels";
 
+const DEV_MODE = true;
+
 const DIM_COLOR = "#1e293b";
 const HOVER_BG = "#1a1d27";
 
@@ -216,7 +218,7 @@ async function expandFileNode(fileId: string): Promise<void> {
   const nodeData = engine.getNode(fileId);
   if (!nodeData) return;
 
-  const licenseKey = getLicenseKey();
+  const licenseKey = DEV_MODE ? null : getLicenseKey();
   const url = `/api/functions?file=${encodeURIComponent(nodeData.path)}${licenseKey ? `&license=${encodeURIComponent(licenseKey)}` : ""}`;
 
   let functions: FunctionInfo[];
@@ -224,7 +226,7 @@ async function expandFileNode(fileId: string): Promise<void> {
   try {
     const resp = await fetch(url);
 
-    if (resp.status === 402) {
+    if (!DEV_MODE && resp.status === 402) {
       showProGateModal();
       return;
     }
@@ -406,7 +408,7 @@ function setupModeToggle(): void {
       if (mode === currentMode) return;
 
       if (mode === "function") {
-        if (!getLicenseKey()) {
+        if (!DEV_MODE && !getLicenseKey()) {
           showProGateModal();
           return;
         }
