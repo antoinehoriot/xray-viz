@@ -1,7 +1,6 @@
 pub mod routes;
 
-use routes::{FunctionsState, GraphState};
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 /// A TCP listener bound to a local port, ready to serve.
 pub struct BoundServer {
@@ -14,11 +13,10 @@ impl BoundServer {
     /// Runs until the connection is dropped or the process exits.
     pub async fn serve(
         self,
-        graph_json: GraphState,
-        functions: FunctionsState,
+        state: routes::AppState,
         web_dist: Option<PathBuf>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let router = routes::build_router(graph_json, functions, web_dist);
+        let router = routes::build_router(state, web_dist);
         tracing::info!("Server listening on http://127.0.0.1:{}", self.port);
         axum::serve(self.listener, router).await?;
         Ok(())
@@ -71,10 +69,9 @@ pub fn find_web_dist() -> Option<PathBuf> {
 #[allow(dead_code)]
 pub async fn start_server(
     port: u16,
-    graph_json: Arc<String>,
-    functions: FunctionsState,
+    state: routes::AppState,
     web_dist: Option<PathBuf>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let server = bind(port).await?;
-    server.serve(graph_json, functions, web_dist).await
+    server.serve(state, web_dist).await
 }

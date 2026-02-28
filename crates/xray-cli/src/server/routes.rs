@@ -4,6 +4,7 @@
 //!   GET /health                        — health check
 //!   GET /api/graph                     — full XrayGraph JSON
 //!   GET /api/functions?file=<path>     — lazy function-level subgraph for a file
+//!   GET /api/events                    — SSE stream for hot-reload (--watch mode)
 //!   GET /*                             — static file serving from web/dist (if present),
 //!                                        otherwise a minimal inline fallback UI
 //!
@@ -13,46 +14,38 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
+    response::sse::{Event, KeepAlive, Sse},
     routing::get,
     Router,
 };
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::{Arc, RwLock}};
+use tokio::sync::broadcast;
+use tokio_stream::wrappers::BroadcastStream;
+use tokio_stream::StreamExt as _;
 use tower_http::services::ServeDir;
 
 use crate::license;
 
-/// Shared graph JSON state.
-pub type GraphState = Arc<String>;
-
-/// Per-file function/class data for lazy loading.
-/// Map key: relative file path. Value: serialized JSON for the /api/functions response.
-pub type FunctionsState = Arc<HashMap<String, serde_json::Value>>;
-
 /// Combined application state shared across all routes.
 #[derive(Clone)]
 pub struct AppState {
-    pub graph_json: GraphState,
-    pub functions: FunctionsState,
+    pub graph_json: Arc<RwLock<String>>,
+    pub functions: Arc<RwLock<HashMap<String, serde_json::Value>>>,
+    pub update_tx: broadcast::Sender<()>,
 }
 
 /// Build the axum router.
 ///
-/// - `graph_json`: serialized XrayGraph (served at /api/graph)
-/// - `functions`: per-file function/class data (served at /api/functions)
+/// - `state`: combined application state (graph JSON, functions, SSE sender)
 /// - `web_dist`: optional path to web/dist for full UI assets;
 ///   if None, serves a minimal fallback HTML
-pub fn build_router(
-    graph_json: GraphState,
-    functions: FunctionsState,
-    web_dist: Option<PathBuf>,
-) -> Router {
-    let state = AppState { graph_json, functions };
-
+pub fn build_router(state: AppState, web_dist: Option<PathBuf>) -> Router {
     // State-dependent routes
     let base = Router::new()
         .route("/health", get(health))
         .route("/api/graph", get(get_graph))
         .route("/api/functions", get(get_functions))
+        .route("/api/events", get(events))
         .with_state(state);
 
     // Static file serving (no state needed).
@@ -71,9 +64,10 @@ async fn health() -> &'static str {
 }
 
 async fn get_graph(State(state): State<AppState>) -> Response {
+    let json = state.graph_json.read().unwrap().clone();
     (
         [("content-type", "application/json")],
-        state.graph_json.as_str().to_string(),
+        json,
     )
         .into_response()
 }
@@ -96,12 +90,13 @@ async fn get_functions(
             .into_response();
     }
     let file = match params.get("file") {
-        Some(f) => f,
+        Some(f) => f.clone(),
         None => {
             return (StatusCode::BAD_REQUEST, "missing 'file' query parameter").into_response();
         }
     };
-    match state.functions.get(file) {
+    let functions = state.functions.read().unwrap();
+    match functions.get(&file) {
         Some(data) => (
             [("content-type", "application/json")],
             data.to_string(),
@@ -109,6 +104,21 @@ async fn get_functions(
             .into_response(),
         None => (StatusCode::NOT_FOUND, format!("file not found: {file}")).into_response(),
     }
+}
+
+/// GET /api/events
+///
+/// Server-Sent Events stream. In watch mode, emits a `graph_updated` event
+/// whenever the graph has been rescanned. In non-watch mode the stream stays
+/// open but never emits (the broadcast channel simply has no senders).
+async fn events(
+    State(state): State<AppState>,
+) -> Sse<impl tokio_stream::Stream<Item = Result<Event, Infallible>>> {
+    let rx = state.update_tx.subscribe();
+    let stream = BroadcastStream::new(rx)
+        .filter_map(|r| r.ok())
+        .map(|_| Ok(Event::default().event("graph_updated").data("reload")));
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
 async fn serve_fallback() -> Html<&'static str> {
@@ -119,6 +129,7 @@ async fn serve_fallback() -> Html<&'static str> {
 
 /// Minimal inline UI served when web/dist hasn't been built yet.
 /// Fetches /api/graph and displays graph stats + node list.
+/// Uses safe DOM text-node insertion (no innerHTML with user data).
 const FALLBACK_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -170,7 +181,7 @@ const FALLBACK_HTML: &str = r#"<!DOCTYPE html>
     <span id="root-label"></span>
   </header>
   <main>
-    <div id="loading">Loading graph…</div>
+    <div id="loading">Loading graph...</div>
     <div id="content" style="display:none">
       <div class="card">
         <h2>Graph Stats</h2>
@@ -199,36 +210,66 @@ const FALLBACK_HTML: &str = r#"<!DOCTYPE html>
   <script type="module">
     const LANG_CLASS = { typescript:'lang-ts', python:'lang-py', rust:'lang-rs',
                          go:'lang-go', java:'lang-java' };
-    try {
-      const resp = await fetch('/api/graph');
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const g = await resp.json();
 
-      document.getElementById('root-label').textContent = g.root;
-      document.getElementById('s-files').textContent = g.stats.file_count;
-      document.getElementById('s-edges').textContent = g.stats.edge_count;
-      document.getElementById('s-langs').textContent = g.languages.length;
-      document.getElementById('s-ms').textContent = g.stats.parse_duration_ms;
-
-      const tbody = document.getElementById('node-table');
-      for (const n of g.nodes.slice(0, 200)) {
-        const cls = LANG_CLASS[n.language] ?? '';
-        tbody.insertAdjacentHTML('beforeend',
-          `<tr><td>${n.path}</td><td class="${cls}">${n.language}</td><td>${n.kind}</td></tr>`);
-      }
-      if (g.nodes.length > 200) {
-        tbody.insertAdjacentHTML('beforeend',
-          `<tr><td colspan="3" style="color:var(--muted)">… and ${g.nodes.length - 200} more</td></tr>`);
-      }
-
-      document.getElementById('loading').style.display = 'none';
-      document.getElementById('content').style.display = '';
-    } catch (err) {
-      document.getElementById('loading').style.display = 'none';
-      const el = document.getElementById('error');
-      el.style.display = '';
-      el.textContent = `Error: ${err}`;
+    function makeRow(path, language, kind) {
+      const tr = document.createElement('tr');
+      const tdPath = document.createElement('td');
+      tdPath.style.fontFamily = 'monospace';
+      tdPath.textContent = path;
+      const tdLang = document.createElement('td');
+      tdLang.className = LANG_CLASS[language] ?? '';
+      tdLang.textContent = language;
+      const tdKind = document.createElement('td');
+      tdKind.textContent = kind;
+      tr.appendChild(tdPath);
+      tr.appendChild(tdLang);
+      tr.appendChild(tdKind);
+      return tr;
     }
+
+    async function loadGraph() {
+      try {
+        const resp = await fetch('/api/graph');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const g = await resp.json();
+
+        document.getElementById('root-label').textContent = g.root;
+        document.getElementById('s-files').textContent = g.stats.file_count;
+        document.getElementById('s-edges').textContent = g.stats.edge_count;
+        document.getElementById('s-langs').textContent = g.languages.length;
+        document.getElementById('s-ms').textContent = g.stats.parse_duration_ms;
+
+        const tbody = document.getElementById('node-table');
+        tbody.textContent = '';
+        const slice = g.nodes.slice(0, 200);
+        for (const n of slice) {
+          tbody.appendChild(makeRow(n.path, n.language, n.kind));
+        }
+        if (g.nodes.length > 200) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.setAttribute('colspan', '3');
+          td.style.color = 'var(--muted)';
+          td.textContent = '... and ' + (g.nodes.length - 200) + ' more';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+        }
+
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('content').style.display = '';
+      } catch (err) {
+        document.getElementById('loading').style.display = 'none';
+        const el = document.getElementById('error');
+        el.style.display = '';
+        el.textContent = 'Error: ' + err;
+      }
+    }
+
+    // Hot reload via SSE
+    const evtSource = new EventSource('/api/events');
+    evtSource.addEventListener('graph_updated', function() { void loadGraph(); });
+
+    void loadGraph();
   </script>
 </body>
 </html>
@@ -241,8 +282,13 @@ mod tests {
     #[test]
     fn test_build_router_no_panic() {
         // Verifies build_router constructs successfully with no web dir.
-        let functions: FunctionsState = Arc::new(HashMap::new());
-        let _router = build_router(Arc::new("{}".to_string()), functions, None);
+        let (tx, _rx) = tokio::sync::broadcast::channel(16);
+        let state = AppState {
+            graph_json: Arc::new(RwLock::new("{}".to_string())),
+            functions: Arc::new(RwLock::new(HashMap::new())),
+            update_tx: tx,
+        };
+        let _router = build_router(state, None);
     }
 
     #[test]

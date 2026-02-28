@@ -297,6 +297,132 @@ function activateFileMode(): void {
   renderer?.refresh();
 }
 
+// ── Renderer creation ─────────────────────────────────────────────────────────
+
+function createRenderer(graphData: XrayGraph): void {
+  // Destroy previous renderer if any
+  if (renderer) {
+    renderer.kill();
+    renderer = null;
+  }
+
+  engine = new Engine(graphData);
+  engine.layoutForce();
+
+  graphStats = {
+    fileCount: graphData.stats.file_count,
+    edgeCount: graphData.stats.edge_count,
+  };
+
+  const container = document.getElementById("canvas-container") as HTMLElement;
+
+  renderer = new Sigma(engine.graph, container, {
+    labelColor: { color: "#e2e8f0" },
+    defaultEdgeType: "arrow",
+    edgeProgramClasses: { arrow: EdgeArrowProgram },
+    defaultDrawNodeHover: darkNodeHover,
+    nodeReducer: (node: string, data: Partial<NodeDisplayData>): Partial<NodeDisplayData> => {
+      if (!engine || !isHighlightActive()) return data;
+      const originalColor = engine.getOriginalColor(node);
+      const color = getNodeColor(node, originalColor);
+      if (isNodeDimmed(node)) {
+        return { ...data, color, label: null };
+      }
+      return { ...data, color };
+    },
+    edgeReducer: (edge: string, data: Partial<EdgeDisplayData>): Partial<EdgeDisplayData> => {
+      if (!engine || !isHighlightActive()) return data;
+      if (highlight.selected !== null) {
+        const src = engine.graph.source(edge);
+        const tgt = engine.graph.target(edge);
+        const srcHighlighted = src === highlight.selected || highlight.deps.has(src) || highlight.dependents.has(src);
+        const tgtHighlighted = tgt === highlight.selected || highlight.deps.has(tgt) || highlight.dependents.has(tgt);
+        if (!srcHighlighted || !tgtHighlighted) {
+          return { ...data, hidden: true };
+        }
+      }
+      return data;
+    },
+  });
+
+  renderer.on("clickNode", async ({ node }: { node: string }) => {
+    if (!engine) return;
+
+    if (currentMode === "function" && !engine.isFunctionNode(node)) {
+      // File node clicked in Fn mode → expand or collapse
+      resetHighlight();
+      if (engine.hasExpandedFunctions(node)) {
+        engine.removeFunctionNodes(node);
+        clearSelection();
+        updateStats(graphStats.fileCount, graphStats.edgeCount);
+      } else {
+        highlight.selected = node;
+        await expandFileNode(node);
+      }
+      renderer?.refresh();
+      return;
+    }
+
+    resetHighlight();
+    highlight.selected = node;
+
+    if (engine.isFunctionNode(node)) {
+      const fnData = engine.getFunctionNode(node);
+      if (fnData) selectFunctionNode(fnData);
+    } else {
+      const nodeData = engine.getNode(node);
+      if (nodeData) selectNode(nodeData);
+    }
+
+    renderer?.refresh();
+  });
+
+  renderer.on("clickStage", () => {
+    resetHighlight();
+    clearSelection();
+    renderer?.refresh();
+  });
+
+  updateStats(graphData.stats.file_count, graphData.stats.edge_count);
+
+  setBlastRadiusHandler((nodeId: string) => {
+    if (!engine) return;
+    highlight.deps = new Set(engine.blastRadius(nodeId));
+    highlight.dependents = new Set(engine.reverseDeps(nodeId));
+    highlight.selected = nodeId;
+    renderer?.refresh();
+  });
+}
+
+// ── Hot reload via SSE ────────────────────────────────────────────────────────
+
+async function reloadGraph(): Promise<void> {
+  try {
+    const resp = await fetch("/api/graph");
+    if (!resp.ok) return;
+    const graphData: XrayGraph = await resp.json() as XrayGraph;
+    resetHighlight();
+    clearSelection();
+    createRenderer(graphData);
+    currentMode = "file";
+    document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelector('.mode-btn[data-mode="file"]')?.classList.add("active");
+    console.log("[xray] graph reloaded");
+  } catch (err) {
+    console.warn("[xray] failed to reload graph", err);
+  }
+}
+
+function setupSSE(): void {
+  const evtSource = new EventSource("/api/events");
+  evtSource.addEventListener("graph_updated", () => {
+    void reloadGraph();
+  });
+  evtSource.onerror = () => {
+    console.warn("[xray] SSE connection lost, will retry...");
+  };
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init(): Promise<void> {
@@ -313,99 +439,14 @@ async function init(): Promise<void> {
     }
     const graphData: XrayGraph = await resp.json() as XrayGraph;
 
-    engine = new Engine(graphData);
-    engine.layoutForce();
-
-    graphStats = {
-      fileCount: graphData.stats.file_count,
-      edgeCount: graphData.stats.edge_count,
-    };
-
     loading.style.display = "none";
-
-    const container = document.getElementById("canvas-container") as HTMLElement;
-
-    renderer = new Sigma(engine.graph, container, {
-      labelColor: { color: "#e2e8f0" },
-      defaultEdgeType: "arrow",
-      edgeProgramClasses: { arrow: EdgeArrowProgram },
-      defaultDrawNodeHover: darkNodeHover,
-      nodeReducer: (node: string, data: Partial<NodeDisplayData>): Partial<NodeDisplayData> => {
-        if (!engine || !isHighlightActive()) return data;
-        const originalColor = engine.getOriginalColor(node);
-        const color = getNodeColor(node, originalColor);
-        if (isNodeDimmed(node)) {
-          return { ...data, color, label: null };
-        }
-        return { ...data, color };
-      },
-      edgeReducer: (edge: string, data: Partial<EdgeDisplayData>): Partial<EdgeDisplayData> => {
-        if (!engine || !isHighlightActive()) return data;
-        if (highlight.selected !== null) {
-          const src = engine.graph.source(edge);
-          const tgt = engine.graph.target(edge);
-          const srcHighlighted = src === highlight.selected || highlight.deps.has(src) || highlight.dependents.has(src);
-          const tgtHighlighted = tgt === highlight.selected || highlight.deps.has(tgt) || highlight.dependents.has(tgt);
-          if (!srcHighlighted || !tgtHighlighted) {
-            return { ...data, hidden: true };
-          }
-        }
-        return data;
-      },
-    });
-
-    renderer.on("clickNode", async ({ node }: { node: string }) => {
-      if (!engine) return;
-
-      if (currentMode === "function" && !engine.isFunctionNode(node)) {
-        // File node clicked in Fn mode → expand or collapse
-        resetHighlight();
-        if (engine.hasExpandedFunctions(node)) {
-          engine.removeFunctionNodes(node);
-          clearSelection();
-          updateStats(graphStats.fileCount, graphStats.edgeCount);
-        } else {
-          highlight.selected = node;
-          await expandFileNode(node);
-        }
-        renderer?.refresh();
-        return;
-      }
-
-      resetHighlight();
-      highlight.selected = node;
-
-      if (engine.isFunctionNode(node)) {
-        const fnData = engine.getFunctionNode(node);
-        if (fnData) selectFunctionNode(fnData);
-      } else {
-        const nodeData = engine.getNode(node);
-        if (nodeData) selectNode(nodeData);
-      }
-
-      renderer?.refresh();
-    });
-
-    renderer.on("clickStage", () => {
-      resetHighlight();
-      clearSelection();
-      renderer?.refresh();
-    });
-
-    updateStats(graphData.stats.file_count, graphData.stats.edge_count);
-
-    setBlastRadiusHandler((nodeId: string) => {
-      if (!engine) return;
-      highlight.deps = new Set(engine.blastRadius(nodeId));
-      highlight.dependents = new Set(engine.reverseDeps(nodeId));
-      highlight.selected = nodeId;
-      renderer?.refresh();
-    });
+    createRenderer(graphData);
 
     setupSearch();
     setupModeToggle();
     setupLayoutToggle();
     setupProGate();
+    setupSSE();
   } catch (err) {
     loading.textContent = `Error loading graph: ${String(err)}`;
   }

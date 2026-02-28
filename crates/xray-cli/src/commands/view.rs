@@ -1,7 +1,7 @@
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 use xray_core::{
     cache::{db::CacheDb, graph_bin},
@@ -48,14 +48,34 @@ pub struct ViewArgs {
     pub format: String,
 }
 
+/// Minimal scan configuration — cloneable for the watcher thread.
+#[derive(Clone)]
+struct ScanParams {
+    path: String,
+    level: String,
+    exclude: Vec<String>,
+    include: Vec<String>,
+    depth: Option<usize>,
+}
+
 pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
     let port_hint = args.port;
     let no_open = args.no_open;
     let output_file = args.output.clone();
+    let watch = args.watch;
+
+    // Extract scan params before moving args into spawn_blocking
+    let scan_params = ScanParams {
+        path: args.path.clone(),
+        level: args.level.clone(),
+        exclude: args.exclude.clone(),
+        include: args.include.clone(),
+        depth: args.depth,
+    };
 
     // ── 1. Scan (blocking; runs on a thread-pool thread) ──────────────────────
     eprintln!("xray: scanning '{}'…", args.path);
-    let (graph_json, functions_state) =
+    let (graph_json, functions_map) =
         tokio::task::spawn_blocking(move || scan_to_json(args))
             .await
             .map_err(|e| format!("Task join error: {e}"))?
@@ -67,7 +87,17 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("xray: graph written to {file}");
     }
 
-    // ── 3. Bind server (discovers actual port in case of conflicts) ───────────
+    // ── 3. Build shared state for server ─────────────────────────────────────
+    let (update_tx, _rx) = tokio::sync::broadcast::channel::<()>(16);
+    let state = crate::server::routes::AppState {
+        graph_json: Arc::new(RwLock::new((*graph_json).clone())),
+        functions: Arc::new(RwLock::new(
+            Arc::try_unwrap(functions_map).unwrap_or_else(|arc| (*arc).clone()),
+        )),
+        update_tx: update_tx.clone(),
+    };
+
+    // ── 4. Bind server (discovers actual port in case of conflicts) ───────────
     let bound = crate::server::bind(port_hint)
         .await
         .map_err(|e| e.to_string())?;
@@ -75,7 +105,7 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
     let url = format!("http://127.0.0.1:{port}");
     eprintln!("xray: serving at {url}");
 
-    // ── 4. Find web bundle (if built) ─────────────────────────────────────────
+    // ── 5. Find web bundle (if built) ─────────────────────────────────────────
     let web_dist = crate::server::find_web_dist();
     if web_dist.is_some() {
         tracing::info!("Serving full Sigma.js UI from web/dist");
@@ -84,14 +114,24 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("      Build with: cd web && bun install && bun run build");
     }
 
-    // ── 5. Start server in background ────────────────────────────────────────
+    // ── 6. Start file watcher (if --watch) ───────────────────────────────────
+    if watch {
+        let root = std::path::Path::new(&scan_params.path)
+            .canonicalize()
+            .unwrap_or_else(|_| std::path::PathBuf::from(&scan_params.path));
+        spawn_watcher(root, state.clone(), update_tx, scan_params);
+        eprintln!("xray: watching for file changes…");
+    }
+
+    // ── 7. Start server in background ────────────────────────────────────────
+    let state_for_server = state.clone();
     let server_handle =
-        tokio::spawn(async move { bound.serve(graph_json, functions_state, web_dist).await });
+        tokio::spawn(async move { bound.serve(state_for_server, web_dist).await });
 
     // Brief pause so the port is ready before opening the browser.
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 
-    // ── 6. Open browser ───────────────────────────────────────────────────────
+    // ── 8. Open browser ───────────────────────────────────────────────────────
     if !no_open {
         match webbrowser::open(&url) {
             Ok(_) => tracing::info!("Browser opened at {url}"),
@@ -99,7 +139,7 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ── 7. Run until Ctrl-C or server exits ───────────────────────────────────
+    // ── 9. Run until Ctrl-C or server exits ───────────────────────────────────
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             eprintln!("\nxray: shutting down");
@@ -116,6 +156,100 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Spawn a background OS thread that watches `root` for source-file changes,
+/// re-scans on change, and broadcasts a reload signal via `tx`.
+fn spawn_watcher(
+    root: std::path::PathBuf,
+    state: crate::server::routes::AppState,
+    tx: tokio::sync::broadcast::Sender<()>,
+    params: ScanParams,
+) {
+    std::thread::spawn(move || {
+        use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+
+        let (ntx, nrx) = std::sync::mpsc::channel();
+        let mut watcher = match RecommendedWatcher::new(ntx, notify::Config::default()) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("xray: failed to create file watcher: {e}");
+                return;
+            }
+        };
+        if let Err(e) = watcher.watch(&root, RecursiveMode::Recursive) {
+            eprintln!("xray: failed to watch directory: {e}");
+            return;
+        }
+
+        let debounce = std::time::Duration::from_millis(300);
+        let mut last_scan = std::time::Instant::now();
+
+        for event in nrx {
+            let event = match event {
+                Ok(e) => e,
+                Err(e) => {
+                    tracing::warn!("Watch error: {e}");
+                    continue;
+                }
+            };
+
+            // Only care about file create/modify/remove
+            if !matches!(
+                event.kind,
+                notify::EventKind::Modify(_)
+                    | notify::EventKind::Create(_)
+                    | notify::EventKind::Remove(_)
+            ) {
+                continue;
+            }
+
+            // Only rescan if at least one changed path is a recognized source file
+            let has_source = event
+                .paths
+                .iter()
+                .any(|p| detect_language(p).is_some());
+            if !has_source {
+                continue;
+            }
+
+            // Debounce rapid saves
+            if last_scan.elapsed() < debounce {
+                continue;
+            }
+            last_scan = std::time::Instant::now();
+
+            eprintln!("xray: file change detected, re-scanning…");
+
+            let rescan_args = ViewArgs {
+                path: params.path.clone(),
+                level: params.level.clone(),
+                exclude: params.exclude.clone(),
+                include: params.include.clone(),
+                depth: params.depth,
+                port: 0,
+                no_open: true,
+                watch: false,
+                output: None,
+                format: "json".to_string(),
+            };
+
+            match scan_to_json(rescan_args) {
+                Ok((new_json, new_fns)) => {
+                    *state.graph_json.write().unwrap() = (*new_json).clone();
+                    let fns_inner =
+                        Arc::try_unwrap(new_fns).unwrap_or_else(|arc| (*arc).clone());
+                    *state.functions.write().unwrap() = fns_inner;
+                    let _ = tx.send(());
+                    eprintln!("xray: graph updated");
+                }
+                Err(e) => eprintln!("xray: re-scan failed: {e}"),
+            }
+        }
+
+        // Keep _watcher alive until channel closes
+        drop(watcher);
+    });
+}
+
 // ── Internal scan helper ──────────────────────────────────────────────────────
 
 /// Synchronously scan `args.path` and return the serialized XrayGraph JSON
@@ -125,7 +259,7 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
 /// `tokio::task::spawn_blocking`.
 fn scan_to_json(
     args: ViewArgs,
-) -> Result<(Arc<String>, crate::server::routes::FunctionsState), String> {
+) -> Result<(Arc<String>, Arc<HashMap<String, serde_json::Value>>), String> {
     let root = std::path::Path::new(&args.path)
         .canonicalize()
         .unwrap_or_else(|_| std::path::PathBuf::from(&args.path));
@@ -246,7 +380,6 @@ fn scan_to_json(
         });
         functions_map.insert(ast.path.clone(), data);
     }
-    let functions_state = Arc::new(functions_map);
 
     let builder = GraphBuilder::new(root.to_string_lossy().to_string());
     let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits, &args.level);
@@ -258,7 +391,7 @@ fn scan_to_json(
     }
 
     let json = export::to_json(&graph).map_err(|e| e.to_string())?;
-    Ok((Arc::new(json), functions_state))
+    Ok((Arc::new(json), Arc::new(functions_map)))
 }
 
 fn parse_file(language: &str, source: &str, path: &str) -> FileAst {
