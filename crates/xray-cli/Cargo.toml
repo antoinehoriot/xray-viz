@@ -1,0 +1,25 @@
+[package]
+name = "xray-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "xray"
+path = "src/main.rs"
+
+[dependencies]
+xray-core = { path = "../xray-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true }
+indicatif = { workspace = true }
+axum = { workspace = true }
+tokio = { workspace = true }
+tower-http = { workspace = true }
+rust-embed = { workspace = true }
+webbrowser = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

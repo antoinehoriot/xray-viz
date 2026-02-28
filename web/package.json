@@ -1,0 +1,21 @@
+{
+  "name": "xray-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/main.ts --bundle --outfile=dist/main.js --minify --sourcemap",
+    "dev": "esbuild src/main.ts --bundle --outfile=dist/main.js --sourcemap --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "sigma": "^3.0.0",
+    "graphology": "^0.25.4",
+    "graphology-types": "^0.24.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.4.0"
+  }
+}

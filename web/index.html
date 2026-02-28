@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Xray — Codebase Visualizer</title>
+  <link rel="stylesheet" href="src/styles.css" />
+</head>
+<body>
+  <header id="topbar">
+    <span id="logo">Xray</span>
+    <input id="search" type="search" placeholder="Search nodes..." autocomplete="off" />
+    <div id="mode-toggle">
+      <button class="mode-btn active" data-mode="file">File</button>
+      <button class="mode-btn" data-mode="function">Fn</button>
+    </div>
+    <div id="layout-toggle">
+      <button class="layout-btn active" data-layout="hierarchical">Hierarchy</button>
+      <button class="layout-btn" data-layout="force">Force</button>
+    </div>
+    <button id="export-btn">Export ▾</button>
+  </header>
+
+  <main id="canvas-container">
+    <canvas id="graph-canvas"></canvas>
+    <div id="loading">Loading graph...</div>
+  </main>
+
+  <footer id="statusbar">
+    <div id="node-detail">
+      <span id="node-path">Select a node</span>
+      <span id="node-lang"></span>
+      <button id="blast-radius-btn" disabled>Blast Radius ▶</button>
+    </div>
+    <div id="graph-stats">
+      <span id="stat-files">0 files</span>
+      <span id="stat-edges">0 edges</span>
+    </div>
+  </footer>
+
+  <script type="module" src="src/main.ts"></script>
+</body>
+</html>
