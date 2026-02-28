@@ -232,7 +232,32 @@ async function expandFileNode(fileId: string): Promise<void> {
     }
 
     if (resp.ok) {
-      functions = (await resp.json()) as FunctionInfo[];
+      const body = (await resp.json()) as {
+        file: string;
+        functions: { name: string; line_start: number; line_end: number; calls: { callee: string; resolved_node_id: string | null; line: number }[]; is_exported: boolean; is_async: boolean }[];
+        classes: { name: string; line_start: number; line_end: number }[];
+      };
+      const fnNodes: FunctionInfo[] = body.functions.map((f) => ({
+        id: `${fileId}::${f.name}`,
+        file_path: body.file,
+        name: f.name,
+        signature: `${f.name}()`,
+        kind: "Function",
+        line_start: f.line_start,
+        line_end: f.line_end,
+        calls: f.calls.map((c) => c.callee),
+      }));
+      const classNodes: FunctionInfo[] = body.classes.map((c) => ({
+        id: `${fileId}::${c.name}`,
+        file_path: body.file,
+        name: c.name,
+        signature: c.name,
+        kind: "Class",
+        line_start: c.line_start,
+        line_end: c.line_end,
+        calls: [],
+      }));
+      functions = [...fnNodes, ...classNodes];
     } else {
       // Backend not ready — use mock data
       functions = generateMockFunctions(fileId, nodeData.path, nodeData.language);
