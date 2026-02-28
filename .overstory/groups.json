@@ -1,0 +1,36 @@
+[
+	{
+		"id": "group-6063da75",
+		"name": "xray-spec-v1",
+		"memberIssueIds": [
+			"codebase-viz-bd5a",
+			"codebase-viz-50d9"
+		],
+		"status": "active",
+		"createdAt": "2026-02-28T08:56:11.869Z",
+		"completedAt": null
+	},
+	{
+		"id": "group-0f1761ac",
+		"name": "m0-m1-implementation",
+		"memberIssueIds": [
+			"codebase-viz-57cc",
+			"codebase-viz-2073",
+			"codebase-viz-871a"
+		],
+		"status": "active",
+		"createdAt": "2026-02-28T09:55:10.073Z",
+		"completedAt": null
+	},
+	{
+		"id": "group-9eb0b911",
+		"name": "m2-implementation",
+		"memberIssueIds": [
+			"codebase-viz-ceb6",
+			"codebase-viz-b1b2"
+		],
+		"status": "active",
+		"createdAt": "2026-02-28T12:10:00.350Z",
+		"completedAt": null
+	}
+]
