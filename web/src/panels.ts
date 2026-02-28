@@ -32,8 +32,13 @@ export function updateStats(fileCount: number, edgeCount: number): void {
   statEdges.textContent = `${edgeCount} edges`;
 }
 
+let blastRadiusCallback: ((nodeId: string) => void) | null = null;
+
+export function setBlastRadiusHandler(handler: (nodeId: string) => void): void {
+  blastRadiusCallback = handler;
+}
+
 blastBtn.addEventListener("click", () => {
-  if (!selectedNode) return;
-  // M2: trigger blast radius computation and Sigma highlight
-  console.log("Blast radius for:", selectedNode.id);
+  if (!selectedNode || !blastRadiusCallback) return;
+  blastRadiusCallback(selectedNode.id);
 });

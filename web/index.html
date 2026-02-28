@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Xray — Codebase Visualizer</title>
-  <link rel="stylesheet" href="src/styles.css" />
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <header id="topbar">
@@ -15,14 +15,13 @@
       <button class="mode-btn" data-mode="function">Fn</button>
     </div>
     <div id="layout-toggle">
-      <button class="layout-btn active" data-layout="hierarchical">Hierarchy</button>
-      <button class="layout-btn" data-layout="force">Force</button>
+      <button class="layout-btn active" data-layout="force">Force</button>
+      <button class="layout-btn" data-layout="hierarchical">Hierarchy</button>
     </div>
     <button id="export-btn">Export ▾</button>
   </header>
 
   <main id="canvas-container">
-    <canvas id="graph-canvas"></canvas>
     <div id="loading">Loading graph...</div>
   </main>
 
@@ -38,6 +37,6 @@
     </div>
   </footer>
 
-  <script type="module" src="src/main.ts"></script>
+  <script type="module" src="main.js"></script>
 </body>
 </html>
