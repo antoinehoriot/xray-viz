@@ -1,5 +1,7 @@
 use clap::Args;
 
+use crate::license;
+
 #[derive(Args)]
 pub struct ExportArgs {
     /// Root directory
@@ -26,6 +28,10 @@ pub struct ExportArgs {
 }
 
 pub fn run(_args: ExportArgs) -> Result<(), Box<dyn std::error::Error>> {
+    if !license::is_pro() {
+        eprintln!("License required. Run: xray license activate <key>");
+        std::process::exit(4);
+    }
     eprintln!("xray export: not yet implemented (M4)");
     Ok(())
 }

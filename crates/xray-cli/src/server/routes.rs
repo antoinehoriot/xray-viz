@@ -19,6 +19,8 @@ use axum::{
 use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use tower_http::services::ServeDir;
 
+use crate::license;
+
 /// Shared graph JSON state.
 pub type GraphState = Arc<String>;
 
@@ -78,12 +80,21 @@ async fn get_graph(State(state): State<AppState>) -> Response {
 
 /// GET /api/functions?file=<relative_path>
 ///
-/// Returns the function-level subgraph for a single file:
+/// Pro-gated endpoint. Returns the function-level subgraph for a single file:
 /// `{ "file": "...", "functions": [...], "classes": [...] }`
+///
+/// Returns 402 Payment Required when no valid Pro license is stored.
 async fn get_functions(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
+    if !license::is_pro() {
+        return (
+            StatusCode::PAYMENT_REQUIRED,
+            "Pro license required. Run: xray license activate <key>",
+        )
+            .into_response();
+    }
     let file = match params.get("file") {
         Some(f) => f,
         None => {
