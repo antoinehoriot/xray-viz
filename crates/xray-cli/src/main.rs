@@ -21,6 +21,10 @@ enum Commands {
     Export(commands::export::ExportArgs),
     /// Manage Pro license
     License(commands::license::LicenseArgs),
+    /// Read and write node annotations in .xray/annotations.yml (Pro)
+    Annotate(commands::annotate::AnnotateArgs),
+    /// Generate a self-contained shareable graph HTML snapshot (Pro)
+    Snapshot(commands::snapshot::SnapshotArgs),
 }
 
 #[tokio::main]
@@ -39,6 +43,8 @@ async fn main() {
         Some(Commands::Scan(args)) => commands::scan::run(args),
         Some(Commands::Export(args)) => commands::export::run(args),
         Some(Commands::License(args)) => commands::license::run(args),
+        Some(Commands::Annotate(args)) => commands::annotate::run(args),
+        Some(Commands::Snapshot(args)) => commands::snapshot::run(args),
         // Default: xray . is equivalent to xray view .
         None => {
             commands::view::run(commands::view::ViewArgs {

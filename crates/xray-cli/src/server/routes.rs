@@ -5,6 +5,8 @@
 //!   GET /api/graph                     — full XrayGraph JSON
 //!   GET /api/functions?file=<path>     — lazy function-level subgraph for a file
 //!   GET /api/events                    — SSE stream for hot-reload (--watch mode)
+//!   GET /api/annotations               — read node annotations (Pro)
+//!   PUT /api/annotations               — write node annotations (Pro)
 //!   GET /*                             — static file serving from web/dist (if present),
 //!                                        otherwise a minimal inline fallback UI
 //!
@@ -16,13 +18,14 @@ use axum::{
     response::{Html, IntoResponse, Response},
     response::sse::{Event, KeepAlive, Sse},
     routing::get,
-    Router,
+    Json, Router,
 };
 use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::{Arc, RwLock}};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use tower_http::services::ServeDir;
+use xray_core::annotations::{self, Annotations};
 
 use crate::license;
 
@@ -32,11 +35,14 @@ pub struct AppState {
     pub graph_json: Arc<RwLock<String>>,
     pub functions: Arc<RwLock<HashMap<String, serde_json::Value>>>,
     pub update_tx: broadcast::Sender<()>,
+    /// Canonical root directory of the scanned repository.
+    /// Used by annotation endpoints to locate `.xray/annotations.yml`.
+    pub root: Arc<PathBuf>,
 }
 
 /// Build the axum router.
 ///
-/// - `state`: combined application state (graph JSON, functions, SSE sender)
+/// - `state`: combined application state (graph JSON, functions, SSE sender, root)
 /// - `web_dist`: optional path to web/dist for full UI assets;
 ///   if None, serves a minimal fallback HTML
 pub fn build_router(state: AppState, web_dist: Option<PathBuf>) -> Router {
@@ -46,6 +52,7 @@ pub fn build_router(state: AppState, web_dist: Option<PathBuf>) -> Router {
         .route("/api/graph", get(get_graph))
         .route("/api/functions", get(get_functions))
         .route("/api/events", get(events))
+        .route("/api/annotations", get(get_annotations).put(put_annotations))
         .with_state(state);
 
     // Static file serving (no state needed).
@@ -119,6 +126,55 @@ async fn events(
         .filter_map(|r| r.ok())
         .map(|_| Ok(Event::default().event("graph_updated").data("reload")));
     Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
+/// GET /api/annotations
+///
+/// Pro-gated. Returns all node annotations as JSON:
+/// `{ "src/main.ts": { "team": "platform", "domain": "core" }, ... }`
+async fn get_annotations(State(state): State<AppState>) -> Response {
+    if !license::is_pro() {
+        return (
+            StatusCode::PAYMENT_REQUIRED,
+            "Pro license required. Run: xray license activate <key>",
+        )
+            .into_response();
+    }
+
+    match annotations::load(&state.root) {
+        Ok(ann) => Json(ann).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to load annotations: {e}"),
+        )
+            .into_response(),
+    }
+}
+
+/// PUT /api/annotations
+///
+/// Pro-gated. Replaces the full annotation map with the JSON body.
+/// Body: `{ "<node_path>": { "team": "...", "domain": "...", "status": "..." } }`
+async fn put_annotations(
+    State(state): State<AppState>,
+    Json(body): Json<Annotations>,
+) -> Response {
+    if !license::is_pro() {
+        return (
+            StatusCode::PAYMENT_REQUIRED,
+            "Pro license required. Run: xray license activate <key>",
+        )
+            .into_response();
+    }
+
+    match annotations::save(&state.root, &body) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save annotations: {e}"),
+        )
+            .into_response(),
+    }
 }
 
 async fn serve_fallback() -> Html<&'static str> {
@@ -287,6 +343,7 @@ mod tests {
             graph_json: Arc::new(RwLock::new("{}".to_string())),
             functions: Arc::new(RwLock::new(HashMap::new())),
             update_tx: tx,
+            root: Arc::new(PathBuf::from(".")),
         };
         let _router = build_router(state, None);
     }

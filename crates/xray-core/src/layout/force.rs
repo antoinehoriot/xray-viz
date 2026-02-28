@@ -28,6 +28,7 @@ impl ForceState {
 /// Place nodes in a sunflower spiral to avoid cold-start clustering.
 ///
 /// Uses the approximate golden angle (~137.5°) for uniform angular distribution.
+#[allow(clippy::ptr_arg)]
 pub fn init_spiral(n: usize, positions: &mut Vec<f32>) {
     for i in 0..n {
         let theta = i as f32 * 2.3999f32; // golden-angle approx in radians

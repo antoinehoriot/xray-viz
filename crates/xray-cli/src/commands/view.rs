@@ -88,6 +88,10 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // ── 3. Build shared state for server ─────────────────────────────────────
+    let root = std::path::Path::new(&scan_params.path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&scan_params.path));
+
     let (update_tx, _rx) = tokio::sync::broadcast::channel::<()>(16);
     let state = crate::server::routes::AppState {
         graph_json: Arc::new(RwLock::new((*graph_json).clone())),
@@ -95,6 +99,7 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
             Arc::try_unwrap(functions_map).unwrap_or_else(|arc| (*arc).clone()),
         )),
         update_tx: update_tx.clone(),
+        root: Arc::new(root),
     };
 
     // ── 4. Bind server (discovers actual port in case of conflicts) ───────────
@@ -257,6 +262,7 @@ fn spawn_watcher(
 ///
 /// Returns `Err(String)` so the result is `Send` and can be used in
 /// `tokio::task::spawn_blocking`.
+#[allow(clippy::type_complexity)]
 fn scan_to_json(
     args: ViewArgs,
 ) -> Result<(Arc<String>, Arc<HashMap<String, serde_json::Value>>), String> {

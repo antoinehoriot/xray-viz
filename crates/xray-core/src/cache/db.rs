@@ -118,6 +118,7 @@ mod native {
         }
 
         /// Retrieve cached function/class declarations for a file.
+        #[allow(clippy::type_complexity)]
         pub fn get_functions(
             &self,
             file_hash: &str,

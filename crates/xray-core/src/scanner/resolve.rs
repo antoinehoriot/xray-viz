@@ -7,6 +7,7 @@ use crate::scanner::FileAst;
 ///
 /// `file_asts` — mutable slice of parsed files (paths are project-relative)
 /// `known_paths` — set of all project-relative file paths that exist
+#[allow(clippy::ptr_arg)]
 pub fn resolve_imports(file_asts: &mut Vec<FileAst>, known_paths: &HashSet<String>) {
     for ast in file_asts.iter_mut() {
         let file_dir = parent_dir(&ast.path);
@@ -240,6 +241,7 @@ fn resolve_go(specifier: &str, file_dir: &str, known_paths: &HashSet<String>) ->
     let base = normalize_path(&join_path(file_dir, specifier));
 
     // Go file match
+    #[allow(clippy::single_element_loop)]
     for ext in &[".go"] {
         let candidate = format!("{base}{ext}");
         if known_paths.contains(&candidate) {

@@ -67,3 +67,6 @@ dirs = "5"
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# YAML serialization (annotations)
+serde_yaml = "0.9"
