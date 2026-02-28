@@ -32,5 +32,27 @@
 		"status": "active",
 		"createdAt": "2026-02-28T12:10:00.350Z",
 		"completedAt": null
+	},
+	{
+		"id": "group-d119d2c5",
+		"name": "ui-polish-batch",
+		"memberIssueIds": [
+			"codebase-viz-c550",
+			"codebase-viz-9a77"
+		],
+		"status": "active",
+		"createdAt": "2026-02-28T13:11:30.785Z",
+		"completedAt": null
+	},
+	{
+		"id": "group-1647a3ba",
+		"name": "m3-implementation",
+		"memberIssueIds": [
+			"codebase-viz-dc69",
+			"codebase-viz-49a0"
+		],
+		"status": "active",
+		"createdAt": "2026-02-28T13:30:11.581Z",
+		"completedAt": null
 	}
 ]
