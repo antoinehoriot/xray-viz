@@ -18,7 +18,14 @@
       <button class="layout-btn active" data-layout="force">Force</button>
       <button class="layout-btn" data-layout="hierarchical">Hierarchy</button>
     </div>
-    <button id="export-btn">Export ▾</button>
+    <button id="dir-group-btn" class="layout-btn">Dirs</button>
+    <div style="position:relative">
+      <button id="export-btn">Export ▾</button>
+      <div id="export-dropdown" class="dropdown" style="display:none">
+        <button id="export-json">Export JSON</button>
+        <button id="export-html">Share as HTML</button>
+      </div>
+    </div>
   </header>
 
   <main id="canvas-container">
@@ -31,6 +38,7 @@
       <span id="node-lang"></span>
       <span id="node-fn-sig" style="display:none"></span>
       <button id="blast-radius-btn" disabled>Blast Radius ▶</button>
+      <button id="annotate-btn" disabled>Tags</button>
     </div>
     <div id="graph-stats">
       <span id="stat-files">0 files</span>

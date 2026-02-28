@@ -15,6 +15,8 @@
   --blast-selected: #fbbf24;
   --blast-deps: #22c55e;
   --blast-dependents: #ef4444;
+  --orphan: #f59e0b;
+  --dir-highlight: #06b6d4;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -81,9 +83,22 @@ body {
   flex-shrink: 0;
 }
 
-#node-detail { display: flex; align-items: center; gap: 12px; }
+#node-detail { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 #blast-radius-btn { padding: 4px 10px; background: var(--accent); border: none; border-radius: 4px; color: white; cursor: pointer; }
 #blast-radius-btn:disabled { opacity: 0.4; cursor: default; }
+
+#annotate-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+}
+#annotate-btn:disabled { opacity: 0.4; cursor: default; }
+#annotate-btn:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+
 #graph-stats { display: flex; gap: 16px; color: var(--text-muted); }
 
 #node-fn-sig {
@@ -216,3 +231,84 @@ body {
 }
 
 .pro-upgrade-link:hover { opacity: 1; text-decoration: underline; }
+
+/* ── Export dropdown ────────────────────────────────────────────────────────── */
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  z-index: 50;
+  flex-direction: column;
+  min-width: 140px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.dropdown button {
+  display: block;
+  width: 100%;
+  padding: 8px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.dropdown button:hover { background: var(--bg); }
+
+/* ── Tag chips ──────────────────────────────────────────────────────────────── */
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent);
+  color: white;
+  font-size: 0.7rem;
+  border-radius: 10px;
+  padding: 2px 8px;
+  user-select: none;
+}
+
+.tag-chip .remove {
+  cursor: pointer;
+  opacity: 0.7;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.tag-chip .remove:hover { opacity: 1; }
+
+/* ── Annotation editor ──────────────────────────────────────────────────────── */
+
+.annotation-editor {
+  position: fixed;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  z-index: 1000;
+  width: 280px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+/* ── Stat orphans ───────────────────────────────────────────────────────────── */
+
+#stat-orphans {
+  transition: color 0.15s;
+}
+
+#stat-orphans:hover {
+  text-decoration: underline;
+}
