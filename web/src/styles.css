@@ -85,3 +85,134 @@ body {
 #blast-radius-btn { padding: 4px 10px; background: var(--accent); border: none; border-radius: 4px; color: white; cursor: pointer; }
 #blast-radius-btn:disabled { opacity: 0.4; cursor: default; }
 #graph-stats { display: flex; gap: 16px; color: var(--text-muted); }
+
+#node-fn-sig {
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.04);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* ── Pro gate modal ─────────────────────────────────────────────────────────── */
+
+.pro-gate-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(4px);
+}
+
+.pro-gate-modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 400px;
+  width: 90%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+}
+
+.pro-gate-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pro-badge {
+  background: var(--accent);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.pro-gate-modal h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pro-gate-modal p {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+#pro-key-input {
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: "SF Mono", "Fira Code", Consolas, monospace;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+#pro-key-input:focus {
+  border-color: var(--accent);
+}
+
+.pro-gate-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#pro-key-submit {
+  flex: 1;
+  padding: 9px;
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: opacity 0.15s;
+}
+
+#pro-key-submit:hover { opacity: 0.85; }
+
+#pro-gate-close {
+  padding: 9px 16px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+#pro-gate-close:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.pro-upgrade-link {
+  color: var(--accent);
+  font-size: 0.78rem;
+  text-align: center;
+  text-decoration: none;
+  opacity: 0.8;
+  transition: opacity 0.15s;
+}
+
+.pro-upgrade-link:hover { opacity: 1; text-decoration: underline; }

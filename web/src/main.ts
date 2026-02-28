@@ -8,8 +8,8 @@ import type { NodeDisplayData, EdgeDisplayData } from "sigma/types";
 import { EdgeArrowProgram, drawDiscNodeLabel } from "sigma/rendering";
 import type { NodeHoverDrawingFunction } from "sigma/rendering";
 import { Engine } from "./engine";
-import type { XrayGraph } from "./engine";
-import { selectNode, clearSelection, updateStats, setBlastRadiusHandler } from "./panels";
+import type { XrayGraph, FunctionInfo } from "./engine";
+import { selectNode, clearSelection, updateStats, setBlastRadiusHandler, selectFunctionNode } from "./panels";
 
 const DIM_COLOR = "#1e293b";
 const HOVER_BG = "#1a1d27";
@@ -23,6 +23,8 @@ interface HighlightState {
 
 let renderer: Sigma | null = null;
 let engine: Engine | null = null;
+let currentMode: "file" | "function" = "file";
+let graphStats = { fileCount: 0, edgeCount: 0 };
 
 const highlight: HighlightState = {
   selected: null,
@@ -30,6 +32,56 @@ const highlight: HighlightState = {
   dependents: new Set(),
   searchMatches: null,
 };
+
+// ── Pro license ───────────────────────────────────────────────────────────────
+
+function getLicenseKey(): string | null {
+  return localStorage.getItem("xray_pro_key");
+}
+
+function setLicenseKey(key: string): void {
+  localStorage.setItem("xray_pro_key", key);
+}
+
+function showProGateModal(): void {
+  const overlay = document.getElementById("pro-gate-overlay");
+  if (overlay) overlay.style.display = "flex";
+  const input = document.getElementById("pro-key-input") as HTMLInputElement | null;
+  if (input) input.value = "";
+}
+
+function hideProGateModal(): void {
+  const overlay = document.getElementById("pro-gate-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+function setupProGate(): void {
+  const submitBtn = document.getElementById("pro-key-submit");
+  const closeBtn = document.getElementById("pro-gate-close");
+  const overlay = document.getElementById("pro-gate-overlay");
+
+  submitBtn?.addEventListener("click", () => {
+    const input = document.getElementById("pro-key-input") as HTMLInputElement | null;
+    const key = input?.value.trim() ?? "";
+    if (!key) return;
+    setLicenseKey(key);
+    hideProGateModal();
+    // Switch to Fn mode now that we have a key
+    activateFnMode();
+  });
+
+  closeBtn?.addEventListener("click", hideProGateModal);
+
+  overlay?.addEventListener("click", (e) => {
+    if (e.target === overlay) hideProGateModal();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") hideProGateModal();
+  });
+}
+
+// ── Highlight helpers ─────────────────────────────────────────────────────────
 
 function isHighlightActive(): boolean {
   return highlight.selected !== null || highlight.searchMatches !== null;
@@ -66,7 +118,8 @@ function resetHighlight(): void {
   highlight.searchMatches = null;
 }
 
-// Custom hover renderer: uses dark surface background instead of white
+// ── Custom hover renderer ─────────────────────────────────────────────────────
+
 const darkNodeHover: NodeHoverDrawingFunction = (context, data, settings) => {
   const size = settings.labelSize;
   const font = settings.labelFont;
@@ -109,6 +162,116 @@ const darkNodeHover: NodeHoverDrawingFunction = (context, data, settings) => {
   drawDiscNodeLabel(context, data, settings);
 };
 
+// ── Mock function data (fallback when backend not ready) ──────────────────────
+
+function generateMockFunctions(fileId: string, path: string, language: string): FunctionInfo[] {
+  const namesByLang: Record<string, Array<{ name: string; kind: "Function" | "Class" }>> = {
+    typescript: [
+      { name: "init", kind: "Function" },
+      { name: "render", kind: "Function" },
+      { name: "update", kind: "Function" },
+      { name: "cleanup", kind: "Function" },
+    ],
+    python: [
+      { name: "__init__", kind: "Function" },
+      { name: "process", kind: "Function" },
+      { name: "validate", kind: "Function" },
+      { name: "run", kind: "Function" },
+    ],
+    rust: [
+      { name: "new", kind: "Function" },
+      { name: "parse", kind: "Function" },
+      { name: "render", kind: "Function" },
+      { name: "validate", kind: "Function" },
+    ],
+    go: [
+      { name: "New", kind: "Function" },
+      { name: "Handle", kind: "Function" },
+      { name: "Close", kind: "Function" },
+    ],
+    java: [
+      { name: "Main", kind: "Class" },
+      { name: "getInstance", kind: "Function" },
+      { name: "execute", kind: "Function" },
+    ],
+  };
+
+  const entries = namesByLang[language] ?? namesByLang["typescript"]!;
+  return entries.map((entry, i) => ({
+    id: `${fileId}::${entry.name}`,
+    file_path: path,
+    name: entry.name,
+    signature: `${entry.name}()`,
+    kind: entry.kind,
+    line_start: 1 + i * 20,
+    line_end: 15 + i * 20,
+    calls: i > 0 ? [`${fileId}::${entries[i - 1]!.name}`] : [],
+  }));
+}
+
+// ── Function expansion ────────────────────────────────────────────────────────
+
+async function expandFileNode(fileId: string): Promise<void> {
+  if (!engine) return;
+  const nodeData = engine.getNode(fileId);
+  if (!nodeData) return;
+
+  const licenseKey = getLicenseKey();
+  const url = `/api/functions?file=${encodeURIComponent(nodeData.path)}${licenseKey ? `&license=${encodeURIComponent(licenseKey)}` : ""}`;
+
+  let functions: FunctionInfo[];
+
+  try {
+    const resp = await fetch(url);
+
+    if (resp.status === 402) {
+      showProGateModal();
+      return;
+    }
+
+    if (resp.ok) {
+      functions = (await resp.json()) as FunctionInfo[];
+    } else {
+      // Backend not ready — use mock data
+      functions = generateMockFunctions(fileId, nodeData.path, nodeData.language);
+    }
+  } catch {
+    // Network error — use mock data
+    functions = generateMockFunctions(fileId, nodeData.path, nodeData.language);
+  }
+
+  engine.addFunctionNodes(fileId, functions);
+  updateStats(graphStats.fileCount, graphStats.edgeCount, functions.length);
+  renderer?.refresh();
+}
+
+// ── Mode management ───────────────────────────────────────────────────────────
+
+function activateFnMode(): void {
+  document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+  document.querySelector('.mode-btn[data-mode="function"]')?.classList.add("active");
+  currentMode = "function";
+}
+
+function activateFileMode(): void {
+  if (!engine) return;
+
+  // Collapse all expanded function nodes
+  engine.collapseAll();
+
+  // Clear selection if it was on a function node
+  if (highlight.selected && engine.isFunctionNode(highlight.selected)) {
+    resetHighlight();
+    clearSelection();
+  }
+
+  currentMode = "file";
+  updateStats(graphStats.fileCount, graphStats.edgeCount);
+  renderer?.refresh();
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
 async function init(): Promise<void> {
   const loading = document.getElementById("loading") as HTMLElement;
 
@@ -118,12 +281,18 @@ async function init(): Promise<void> {
       loading.textContent = `No graph loaded. Run \`xray .\` to scan your codebase. (HTTP ${resp.status})`;
       setupModeToggle();
       setupLayoutToggle();
+      setupProGate();
       return;
     }
     const graphData: XrayGraph = await resp.json() as XrayGraph;
 
     engine = new Engine(graphData);
     engine.layoutForce();
+
+    graphStats = {
+      fileCount: graphData.stats.file_count,
+      edgeCount: graphData.stats.edge_count,
+    };
 
     loading.style.display = "none";
 
@@ -158,11 +327,35 @@ async function init(): Promise<void> {
       },
     });
 
-    renderer.on("clickNode", ({ node }: { node: string }) => {
+    renderer.on("clickNode", async ({ node }: { node: string }) => {
+      if (!engine) return;
+
+      if (currentMode === "function" && !engine.isFunctionNode(node)) {
+        // File node clicked in Fn mode → expand or collapse
+        resetHighlight();
+        if (engine.hasExpandedFunctions(node)) {
+          engine.removeFunctionNodes(node);
+          clearSelection();
+          updateStats(graphStats.fileCount, graphStats.edgeCount);
+        } else {
+          highlight.selected = node;
+          await expandFileNode(node);
+        }
+        renderer?.refresh();
+        return;
+      }
+
       resetHighlight();
       highlight.selected = node;
-      const nodeData = engine!.getNode(node);
-      if (nodeData) selectNode(nodeData);
+
+      if (engine.isFunctionNode(node)) {
+        const fnData = engine.getFunctionNode(node);
+        if (fnData) selectFunctionNode(fnData);
+      } else {
+        const nodeData = engine.getNode(node);
+        if (nodeData) selectNode(nodeData);
+      }
+
       renderer?.refresh();
     });
 
@@ -185,6 +378,7 @@ async function init(): Promise<void> {
     setupSearch();
     setupModeToggle();
     setupLayoutToggle();
+    setupProGate();
   } catch (err) {
     loading.textContent = `Error loading graph: ${String(err)}`;
   }
@@ -207,9 +401,23 @@ function setupSearch(): void {
 function setupModeToggle(): void {
   document.querySelectorAll(".mode-btn").forEach((btn) => {
     btn.addEventListener("click", (e) => {
-      document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
-      (e.target as HTMLElement).classList.add("active");
-      // Mode toggle is a UI-only state for now (file vs function level)
+      const target = e.target as HTMLElement;
+      const mode = target.dataset["mode"] as "file" | "function";
+      if (mode === currentMode) return;
+
+      if (mode === "function") {
+        if (!getLicenseKey()) {
+          showProGateModal();
+          return;
+        }
+        document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+        target.classList.add("active");
+        currentMode = "function";
+      } else {
+        document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
+        target.classList.add("active");
+        activateFileMode();
+      }
     });
   });
 }
