@@ -61,11 +61,11 @@ const LANG_COLORS: Record<string, string> = {
 };
 
 const EDGE_COLORS: Record<string, string> = {
-  Import: "#475569",
-  DynamicImport: "#475569",
+  Import: "#64748b",
+  DynamicImport: "#64748b",
   Call: "#3b82f6",
   Inheritance: "#a855f7",
-  ReExport: "#64748b",
+  ReExport: "#94a3b8",
 };
 
 function nodeSize(loc: number | null): number {
