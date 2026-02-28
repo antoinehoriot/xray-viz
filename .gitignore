@@ -1,0 +1,17 @@
+# Build artifacts
+target/
+web/dist/
+web/node_modules/
+
+# Xray cache
+.xray/
+crates/.xray/
+
+# Overstory runtime files
+.overstory/groups.json
+.overstory/worktrees/
+.overstory/sessions.json
+.overstory/mail.db
+
+# macOS
+.DS_Store
