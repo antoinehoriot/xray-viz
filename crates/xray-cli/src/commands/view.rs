@@ -1,4 +1,16 @@
 use clap::Args;
+use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::Arc;
+use std::time::Instant;
+use xray_core::{
+    cache::{db::CacheDb, graph_bin},
+    detect_language,
+    graph::{builder::GraphBuilder, export},
+    scanner::{
+        languages::{go, java, python, rust, typescript},
+        ExportDecl, FileAst,
+    },
+};
 
 #[derive(Args)]
 pub struct ViewArgs {
@@ -23,7 +35,7 @@ pub struct ViewArgs {
     /// Maximum directory depth
     #[arg(long)]
     pub depth: Option<usize>,
-    /// Re-scan on file changes
+    /// Re-scan on file changes (hot reload)
     #[arg(long)]
     pub watch: bool,
     /// Also write graph JSON to file
@@ -35,10 +47,209 @@ pub struct ViewArgs {
 }
 
 pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::info!("Scanning '{}'...", args.path);
-    // M1: scan path, build graph
-    // M2: start axum server and open browser
-    let url = format!("http://127.0.0.1:{}", args.port);
-    eprintln!("xray: server not yet implemented. Would serve at {url}");
+    let port_hint = args.port;
+    let no_open = args.no_open;
+    let output_file = args.output.clone();
+
+    // ── 1. Scan (blocking; runs on a thread-pool thread) ──────────────────────
+    eprintln!("xray: scanning '{}'…", args.path);
+    let graph_json: Arc<String> = tokio::task::spawn_blocking(move || scan_to_json(args))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+
+    // ── 2. Optionally write graph JSON to file ────────────────────────────────
+    if let Some(ref file) = output_file {
+        std::fs::write(file, graph_json.as_str())?;
+        eprintln!("xray: graph written to {file}");
+    }
+
+    // ── 3. Bind server (discovers actual port in case of conflicts) ───────────
+    let bound = crate::server::bind(port_hint)
+        .await
+        .map_err(|e| e.to_string())?;
+    let port = bound.port;
+    let url = format!("http://127.0.0.1:{port}");
+    eprintln!("xray: serving at {url}");
+
+    // ── 4. Find web bundle (if built) ─────────────────────────────────────────
+    let web_dist = crate::server::find_web_dist();
+    if web_dist.is_some() {
+        tracing::info!("Serving full Sigma.js UI from web/dist");
+    } else {
+        eprintln!("xray: web bundle not found — serving minimal fallback UI");
+        eprintln!("      Build with: cd web && bun install && bun run build");
+    }
+
+    // ── 5. Start server in background ────────────────────────────────────────
+    let server_handle =
+        tokio::spawn(async move { bound.serve(graph_json, web_dist).await });
+
+    // Brief pause so the port is ready before opening the browser.
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+
+    // ── 6. Open browser ───────────────────────────────────────────────────────
+    if !no_open {
+        match webbrowser::open(&url) {
+            Ok(_) => tracing::info!("Browser opened at {url}"),
+            Err(e) => eprintln!("xray: could not open browser ({e}). Visit {url}"),
+        }
+    }
+
+    // ── 7. Run until Ctrl-C or server exits ───────────────────────────────────
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            eprintln!("\nxray: shutting down");
+        }
+        result = server_handle => {
+            match result {
+                Ok(Err(e)) => eprintln!("xray: server error: {e}"),
+                Ok(Ok(())) => {}
+                Err(e) => eprintln!("xray: server task panicked: {e}"),
+            }
+        }
+    }
+
     Ok(())
+}
+
+// ── Internal scan helper ──────────────────────────────────────────────────────
+
+/// Synchronously scan `args.path` and return the serialized XrayGraph JSON.
+///
+/// Returns `Err(String)` so the result is `Send` and can be used in
+/// `tokio::task::spawn_blocking`.
+fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
+    let root = std::path::Path::new(&args.path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&args.path));
+
+    let cache_dir = root.join(".xray");
+    let db = CacheDb::open(&cache_dir.join("cache.db")).map_err(|e| e.to_string())?;
+
+    let spinner = ProgressBar::new_spinner();
+    spinner.set_style(
+        ProgressStyle::with_template("{spinner:.cyan} {msg}")
+            .unwrap()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]),
+    );
+    spinner.set_message("Scanning…");
+    spinner.enable_steady_tick(std::time::Duration::from_millis(80));
+
+    let start = Instant::now();
+
+    let mut walk_builder = ignore::WalkBuilder::new(&root);
+    if let Some(max_depth) = args.depth {
+        walk_builder.max_depth(Some(max_depth));
+    }
+    for pattern in &args.exclude {
+        walk_builder.add_ignore(pattern);
+    }
+
+    let mut file_asts: Vec<FileAst> = Vec::new();
+    let mut cache_hits: u64 = 0;
+
+    for entry in walk_builder.build() {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(err) => {
+                tracing::warn!("Walk error: {err}");
+                continue;
+            }
+        };
+
+        if !entry.file_type().map(|t| t.is_file()).unwrap_or(false) {
+            continue;
+        }
+
+        let path = entry.path();
+
+        let language = match detect_language(path) {
+            Some(l) => l,
+            None => continue,
+        };
+
+        if !args.include.is_empty() && !args.include.iter().any(|l| l == language) {
+            continue;
+        }
+
+        let rel_path = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .to_string_lossy()
+            .to_string();
+
+        let content = match std::fs::read(path) {
+            Ok(c) => c,
+            Err(err) => {
+                tracing::warn!("Failed to read '{}': {err}", rel_path);
+                continue;
+            }
+        };
+        let hash_str = blake3::hash(&content).to_hex().to_string();
+
+        let imports = match db.get_deps(&hash_str) {
+            Ok(Some(cached)) => {
+                cache_hits += 1;
+                cached
+            }
+            Ok(None) => {
+                let source = String::from_utf8_lossy(&content).into_owned();
+                let ast = parse_file(language, &source, &rel_path);
+                let imports = ast.imports.clone();
+                if let Err(err) = db.put_deps(&hash_str, &rel_path, language, &imports) {
+                    tracing::warn!("Cache write failed for '{}': {err}", rel_path);
+                }
+                imports
+            }
+            Err(err) => {
+                tracing::warn!("Cache read error: {err}");
+                vec![]
+            }
+        };
+
+        file_asts.push(FileAst {
+            path: rel_path.clone(),
+            language: language.to_string(),
+            imports,
+            exports: vec![],
+            functions: vec![],
+            classes: vec![],
+        });
+
+        spinner.set_message(format!("Scanned {} files…", file_asts.len()));
+    }
+
+    let parse_duration_ms = start.elapsed().as_millis() as u64;
+    spinner.finish_with_message(format!("Found {} files", file_asts.len()));
+
+    let builder = GraphBuilder::new(root.to_string_lossy().to_string());
+    let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits);
+
+    // Persist bincode graph cache for instant re-serve.
+    let graph_bin_path = cache_dir.join("graph.bin");
+    if let Err(err) = graph_bin::save(&graph, &graph_bin_path) {
+        tracing::warn!("Failed to save graph cache: {err}");
+    }
+
+    let json = export::to_json(&graph).map_err(|e| e.to_string())?;
+    Ok(Arc::new(json))
+}
+
+fn parse_file(language: &str, source: &str, path: &str) -> FileAst {
+    match language {
+        "typescript" => typescript::parse(source, path),
+        "python" => python::parse(source, path),
+        "rust" => rust::parse(source, path),
+        "go" => go::parse(source, path),
+        "java" => java::parse(source, path),
+        _ => FileAst {
+            path: path.to_string(),
+            language: language.to_string(),
+            imports: vec![],
+            exports: Vec::<ExportDecl>::new(),
+            functions: vec![],
+            classes: vec![],
+        },
+    }
 }
