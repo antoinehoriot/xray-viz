@@ -4,14 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/main.ts --bundle --outfile=dist/main.js --minify --sourcemap",
+    "build": "esbuild src/main.ts --bundle --outfile=dist/main.js --format=esm --platform=browser --minify --sourcemap && cp index.html dist/ && cp src/styles.css dist/",
     "dev": "esbuild src/main.ts --bundle --outfile=dist/main.js --sourcemap --watch",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "sigma": "^3.0.0",
     "graphology": "^0.25.4",
-    "graphology-types": "^0.24.7"
+    "graphology-types": "^0.24.7",
+    "graphology-layout-forceatlas2": "^0.10.1",
+    "graphology-layout": "^0.6.1"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
