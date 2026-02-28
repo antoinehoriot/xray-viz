@@ -2005,7 +2005,9 @@ name = "xray-cli"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "blake3",
  "clap",
+ "ignore",
  "indicatif",
  "rust-embed",
  "serde",
