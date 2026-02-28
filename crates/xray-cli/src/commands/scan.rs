@@ -42,6 +42,9 @@ pub struct ScanArgs {
     /// Print scan stats to stderr
     #[arg(long)]
     pub stats: bool,
+    /// Detect and report circular dependencies
+    #[arg(long)]
+    pub cycles: bool,
 }
 
 pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
@@ -189,6 +192,21 @@ pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         std::fs::write(output_file, &output_str)?;
     } else {
         println!("{output_str}");
+    }
+
+    if args.cycles {
+        let cycles = xray_core::graph::cycles::detect_cycles(&graph);
+        if cycles.is_empty() {
+            eprintln!("No circular dependencies detected.");
+        } else {
+            eprintln!("Found {} circular dependencies:", cycles.len());
+            for (i, cycle) in cycles.iter().enumerate() {
+                let paths: Vec<&str> = cycle.nodes.iter()
+                    .filter_map(|id| graph.nodes.iter().find(|n| &n.id == id).map(|n| n.path.as_str()))
+                    .collect();
+                eprintln!("  {}. {} -> {}", i + 1, paths.join(" -> "), paths.first().unwrap_or(&"?"));
+            }
+        }
     }
 
     if args.stats {
