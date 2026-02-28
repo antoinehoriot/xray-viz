@@ -16,6 +16,8 @@ use xray_core::{
     },
 };
 
+use crate::license;
+
 #[derive(Args)]
 pub struct ExportArgs {
     /// Root directory
@@ -41,43 +43,12 @@ pub struct ExportArgs {
     pub output: Option<String>,
 }
 
-pub fn run(args: ExportArgs) -> Result<(), Box<dyn std::error::Error>> {
-    let root = std::path::Path::new(&args.path)
-        .canonicalize()
-        .unwrap_or_else(|_| std::path::PathBuf::from(&args.path));
-
-    // Load or build the graph.
-    let cache_dir = root.join(".xray");
-    let graph_bin_path = cache_dir.join("graph.bin");
-
-    let graph = match graph_bin::load(&graph_bin_path) {
-        Ok(Some(g)) => g,
-        _ => build_graph(&root, &cache_dir)?,
-    };
-
-    let from = match &args.from {
-        Some(f) => f.clone(),
-        None => {
-            return Err("--from <file> is required for xray export".into());
-        }
-    };
-
-    let export = extract_subgraph(&graph, &from, args.depth, &args.direction, args.max_nodes);
-
-    // Timestamp for the export.
-    let exported_at = utc_now_iso8601();
-
-    let output_str = match args.format.as_str() {
-        "json" => to_ai_json(&export, &exported_at)?,
-        _ => to_ai_markdown(&export, &exported_at),
-    };
-
-    if let Some(output_file) = &args.output {
-        std::fs::write(output_file, &output_str)?;
-    } else {
-        println!("{output_str}");
+pub fn run(_args: ExportArgs) -> Result<(), Box<dyn std::error::Error>> {
+    if !license::is_pro() {
+        eprintln!("License required. Run: xray license activate <key>");
+        std::process::exit(4);
     }
-
+    eprintln!("xray export: not yet implemented (M4)");
     Ok(())
 }
 

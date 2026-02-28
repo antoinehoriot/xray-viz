@@ -24,4 +24,5 @@ webbrowser = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 blake3 = { workspace = true }
+dirs = { workspace = true }
 ignore = { workspace = true }
