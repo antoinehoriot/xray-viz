@@ -8,8 +8,8 @@ import type { NodeDisplayData, EdgeDisplayData } from "sigma/types";
 import { EdgeArrowProgram, drawDiscNodeLabel } from "sigma/rendering";
 import type { NodeHoverDrawingFunction } from "sigma/rendering";
 import { Engine } from "./engine";
-import type { XrayGraph, FunctionInfo } from "./engine";
-import { selectNode, clearSelection, updateStats, setBlastRadiusHandler, selectFunctionNode } from "./panels";
+import type { XrayGraph, FunctionInfo, CycleInfo } from "./engine";
+import { selectNode, clearSelection, updateStats, setBlastRadiusHandler, selectFunctionNode, updateCycleCount, setCycleClickHandler, showCyclePanel, hideCyclePanel } from "./panels";
 
 const DEV_MODE = true;
 
@@ -21,6 +21,8 @@ interface HighlightState {
   deps: Set<string>;
   dependents: Set<string>;
   searchMatches: Set<string> | null;
+  cycleNodes: Set<string> | null;
+  cycleEdges: Set<string> | null;
 }
 
 let renderer: Sigma | null = null;
@@ -33,6 +35,8 @@ const highlight: HighlightState = {
   deps: new Set(),
   dependents: new Set(),
   searchMatches: null,
+  cycleNodes: null,
+  cycleEdges: null,
 };
 
 // ── Pro license ───────────────────────────────────────────────────────────────
@@ -86,7 +90,7 @@ function setupProGate(): void {
 // ── Highlight helpers ─────────────────────────────────────────────────────────
 
 function isHighlightActive(): boolean {
-  return highlight.selected !== null || highlight.searchMatches !== null;
+  return highlight.selected !== null || highlight.searchMatches !== null || highlight.cycleNodes !== null;
 }
 
 function getNodeColor(node: string, originalColor: string): string {
@@ -100,6 +104,10 @@ function getNodeColor(node: string, originalColor: string): string {
     if (highlight.searchMatches.has(node)) return originalColor;
     return DIM_COLOR;
   }
+  if (highlight.cycleNodes !== null) {
+    if (highlight.cycleNodes.has(node)) return "#ef4444";
+    return DIM_COLOR;
+  }
   return originalColor;
 }
 
@@ -110,6 +118,9 @@ function isNodeDimmed(node: string): boolean {
   if (highlight.searchMatches !== null) {
     return !highlight.searchMatches.has(node);
   }
+  if (highlight.cycleNodes !== null) {
+    return !highlight.cycleNodes.has(node);
+  }
   return false;
 }
 
@@ -118,6 +129,8 @@ function resetHighlight(): void {
   highlight.deps = new Set();
   highlight.dependents = new Set();
   highlight.searchMatches = null;
+  highlight.cycleNodes = null;
+  highlight.cycleEdges = null;
 }
 
 // ── Custom hover renderer ─────────────────────────────────────────────────────
@@ -332,6 +345,12 @@ function createRenderer(graphData: XrayGraph): void {
     },
     edgeReducer: (edge: string, data: Partial<EdgeDisplayData>): Partial<EdgeDisplayData> => {
       if (!engine || !isHighlightActive()) return data;
+      if (highlight.cycleEdges !== null) {
+        if (highlight.cycleEdges.has(edge)) {
+          return { ...data, color: "#ef4444", size: 2 };
+        }
+        return { ...data, hidden: true };
+      }
       if (highlight.selected !== null) {
         const src = engine.graph.source(edge);
         const tgt = engine.graph.target(edge);
@@ -380,6 +399,7 @@ function createRenderer(graphData: XrayGraph): void {
   renderer.on("clickStage", () => {
     resetHighlight();
     clearSelection();
+    hideCyclePanel();
     renderer?.refresh();
   });
 
@@ -392,6 +412,43 @@ function createRenderer(graphData: XrayGraph): void {
     highlight.selected = nodeId;
     renderer?.refresh();
   });
+}
+
+// ── Cycle detection ────────────────────────────────────────────────────────────
+
+function setupCycles(): void {
+  if (!engine || !renderer) return;
+
+  const cycles: CycleInfo[] = engine.detectCycles();
+  updateCycleCount(cycles.length);
+
+  if (cycles.length > 0) {
+    setCycleClickHandler(() => {
+      if (highlight.cycleNodes !== null) {
+        // Toggle off
+        resetHighlight();
+        hideCyclePanel();
+        renderer?.refresh();
+        return;
+      }
+      // Highlight all cycle nodes/edges and show panel
+      highlight.cycleNodes = engine!.getCycleNodes();
+      highlight.cycleEdges = engine!.getCycleEdges();
+      showCyclePanel(
+        cycles,
+        (id) => engine!.getNode(id)?.path ?? id,
+        (index) => {
+          const cycle = cycles[index];
+          if (cycle) {
+            highlight.cycleNodes = new Set(cycle.nodes);
+            highlight.cycleEdges = new Set(cycle.edges);
+            renderer?.refresh();
+          }
+        },
+      );
+      renderer?.refresh();
+    });
+  }
 }
 
 // ── Hot reload via SSE ────────────────────────────────────────────────────────
@@ -446,6 +503,7 @@ async function init(): Promise<void> {
     setupModeToggle();
     setupLayoutToggle();
     setupProGate();
+    setupCycles();
     setupSSE();
   } catch (err) {
     loading.textContent = `Error loading graph: ${String(err)}`;

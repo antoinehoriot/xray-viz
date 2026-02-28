@@ -63,6 +63,11 @@ export interface FunctionInfo {
   calls: string[]; // IDs of functions this calls
 }
 
+export interface CycleInfo {
+  nodes: string[]; // ordered node IDs forming the cycle
+  edges: string[]; // graphology edge keys in the cycle
+}
+
 const LANG_COLORS: Record<string, string> = {
   typescript: "#3b82f6",
   python: "#f97316",
@@ -99,6 +104,7 @@ export class Engine {
   private readonly graphData: XrayGraph;
   private readonly functionNodes: Map<string, FunctionInfo> = new Map();
   private readonly expandedFiles: Map<string, string[]> = new Map();
+  private cachedCycles: CycleInfo[] | null = null;
 
   constructor(graphData: XrayGraph) {
     this.graphData = graphData;
@@ -230,6 +236,7 @@ export class Engine {
     }
 
     this.expandedFiles.set(fileId, addedIds);
+    this.invalidateCycleCache();
   }
 
   removeFunctionNodes(fileId: string): void {
@@ -241,12 +248,14 @@ export class Engine {
       this.functionNodes.delete(id);
     }
     this.expandedFiles.delete(fileId);
+    this.invalidateCycleCache();
   }
 
   collapseAll(): void {
     for (const fileId of [...this.expandedFiles.keys()]) {
       this.removeFunctionNodes(fileId);
     }
+    this.invalidateCycleCache();
   }
 
   hasExpandedFunctions(fileId: string): boolean {
@@ -305,6 +314,94 @@ export class Engine {
       const path = (this.graph.getNodeAttribute(id, "path") as string ?? "").toLowerCase();
       return label.includes(q) || path.includes(q);
     });
+  }
+
+  /** Detect all import cycles using Tarjan's SCC algorithm.
+   *  Returns cycles sorted by length (shortest first).
+   *  Caches result. */
+  detectCycles(): CycleInfo[] {
+    if (this.cachedCycles !== null) return this.cachedCycles;
+
+    const index: Map<string, number> = new Map();
+    const lowlink: Map<string, number> = new Map();
+    const onStack: Set<string> = new Set();
+    const stack: string[] = [];
+    let counter = 0;
+    const cycles: CycleInfo[] = [];
+
+    const strongConnect = (v: string): void => {
+      index.set(v, counter);
+      lowlink.set(v, counter);
+      counter++;
+      stack.push(v);
+      onStack.add(v);
+
+      for (const w of this.graph.outNeighbors(v)) {
+        if (!index.has(w)) {
+          strongConnect(w);
+          lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
+        } else if (onStack.has(w)) {
+          lowlink.set(v, Math.min(lowlink.get(v)!, index.get(w)!));
+        }
+      }
+
+      if (lowlink.get(v) === index.get(v)) {
+        const scc: string[] = [];
+        let w: string;
+        do {
+          w = stack.pop()!;
+          onStack.delete(w);
+          scc.push(w);
+        } while (w !== v);
+
+        if (scc.length > 1) {
+          const sccSet = new Set(scc);
+          const cycleEdges: string[] = [];
+          for (const node of scc) {
+            for (const neighbor of this.graph.outNeighbors(node)) {
+              if (sccSet.has(neighbor) && this.graph.hasEdge(node, neighbor)) {
+                const edgeKey = this.graph.edge(node, neighbor);
+                if (edgeKey !== undefined) cycleEdges.push(edgeKey);
+              }
+            }
+          }
+          cycles.push({ nodes: scc, edges: cycleEdges });
+        }
+      }
+    };
+
+    for (const v of this.graph.nodes()) {
+      if (!index.has(v)) {
+        strongConnect(v);
+      }
+    }
+
+    cycles.sort((a, b) => a.nodes.length - b.nodes.length);
+    this.cachedCycles = cycles;
+    return cycles;
+  }
+
+  /** Get all node IDs involved in any cycle */
+  getCycleNodes(): Set<string> {
+    const nodes = new Set<string>();
+    for (const c of this.detectCycles()) {
+      c.nodes.forEach((n) => nodes.add(n));
+    }
+    return nodes;
+  }
+
+  /** Get all edge keys involved in any cycle */
+  getCycleEdges(): Set<string> {
+    const edges = new Set<string>();
+    for (const c of this.detectCycles()) {
+      c.edges.forEach((e) => edges.add(e));
+    }
+    return edges;
+  }
+
+  /** Invalidate cycle cache (call when graph structure changes) */
+  invalidateCycleCache(): void {
+    this.cachedCycles = null;
   }
 
   getNode(id: string): XrayNode | null {
