@@ -9,7 +9,26 @@ import { EdgeArrowProgram, drawDiscNodeLabel } from "sigma/rendering";
 import type { NodeHoverDrawingFunction } from "sigma/rendering";
 import { Engine } from "./engine";
 import type { XrayGraph, FunctionInfo, CycleInfo } from "./engine";
-import { selectNode, clearSelection, updateStats, setBlastRadiusHandler, selectFunctionNode, updateCycleCount, setCycleClickHandler, showCyclePanel, hideCyclePanel } from "./panels";
+import {
+  selectNode,
+  clearSelection,
+  updateStats,
+  setBlastRadiusHandler,
+  selectFunctionNode,
+  updateCycleCount,
+  setCycleClickHandler,
+  showCyclePanel,
+  hideCyclePanel,
+  updateOrphanCount,
+  setOrphanClickHandler,
+  showOrphanPanel,
+  hideOrphanPanel,
+  showDirectoryPanel,
+  hideDirectoryPanel,
+  displayNodeTags,
+  showAnnotationEditor,
+  hideAnnotationEditor,
+} from "./panels";
 
 const DEV_MODE = true;
 
@@ -23,6 +42,8 @@ interface HighlightState {
   searchMatches: Set<string> | null;
   cycleNodes: Set<string> | null;
   cycleEdges: Set<string> | null;
+  orphanNodes: Set<string> | null;
+  directoryNodes: Set<string> | null;
 }
 
 let renderer: Sigma | null = null;
@@ -37,6 +58,8 @@ const highlight: HighlightState = {
   searchMatches: null,
   cycleNodes: null,
   cycleEdges: null,
+  orphanNodes: null,
+  directoryNodes: null,
 };
 
 // ── Pro license ───────────────────────────────────────────────────────────────
@@ -83,14 +106,23 @@ function setupProGate(): void {
   });
 
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") hideProGateModal();
+    if (e.key === "Escape") {
+      hideProGateModal();
+      hideAnnotationEditor();
+    }
   });
 }
 
 // ── Highlight helpers ─────────────────────────────────────────────────────────
 
 function isHighlightActive(): boolean {
-  return highlight.selected !== null || highlight.searchMatches !== null || highlight.cycleNodes !== null;
+  return (
+    highlight.selected !== null ||
+    highlight.searchMatches !== null ||
+    highlight.cycleNodes !== null ||
+    highlight.orphanNodes !== null ||
+    highlight.directoryNodes !== null
+  );
 }
 
 function getNodeColor(node: string, originalColor: string): string {
@@ -108,6 +140,14 @@ function getNodeColor(node: string, originalColor: string): string {
     if (highlight.cycleNodes.has(node)) return "#ef4444";
     return DIM_COLOR;
   }
+  if (highlight.orphanNodes !== null) {
+    if (highlight.orphanNodes.has(node)) return "#f59e0b";
+    return DIM_COLOR;
+  }
+  if (highlight.directoryNodes !== null) {
+    if (highlight.directoryNodes.has(node)) return "#06b6d4";
+    return DIM_COLOR;
+  }
   return originalColor;
 }
 
@@ -121,6 +161,12 @@ function isNodeDimmed(node: string): boolean {
   if (highlight.cycleNodes !== null) {
     return !highlight.cycleNodes.has(node);
   }
+  if (highlight.orphanNodes !== null) {
+    return !highlight.orphanNodes.has(node);
+  }
+  if (highlight.directoryNodes !== null) {
+    return !highlight.directoryNodes.has(node);
+  }
   return false;
 }
 
@@ -131,6 +177,8 @@ function resetHighlight(): void {
   highlight.searchMatches = null;
   highlight.cycleNodes = null;
   highlight.cycleEdges = null;
+  highlight.orphanNodes = null;
+  highlight.directoryNodes = null;
 }
 
 // ── Custom hover renderer ─────────────────────────────────────────────────────
@@ -337,11 +385,14 @@ function createRenderer(graphData: XrayGraph): void {
     nodeReducer: (node: string, data: Partial<NodeDisplayData>): Partial<NodeDisplayData> => {
       if (!engine || !isHighlightActive()) return data;
       const originalColor = engine.getOriginalColor(node);
+      const annotation = engine.getAnnotation(node);
+      // Dim deprecated nodes even when not in highlight mode
+      const isDeprecated = annotation?.status === "deprecated";
       const color = getNodeColor(node, originalColor);
       if (isNodeDimmed(node)) {
-        return { ...data, color, label: null };
+        return { ...data, color: isDeprecated ? "#3d4255" : color, label: null };
       }
-      return { ...data, color };
+      return { ...data, color: isDeprecated ? "#4a5068" : color };
     },
     edgeReducer: (edge: string, data: Partial<EdgeDisplayData>): Partial<EdgeDisplayData> => {
       if (!engine || !isHighlightActive()) return data;
@@ -390,7 +441,15 @@ function createRenderer(graphData: XrayGraph): void {
       if (fnData) selectFunctionNode(fnData);
     } else {
       const nodeData = engine.getNode(node);
-      if (nodeData) selectNode(nodeData);
+      if (nodeData) {
+        selectNode(nodeData);
+        // Display annotations/tags for this node
+        const annotation = engine.getAnnotation(node);
+        const allTags = [...(nodeData.metadata.tags ?? []), ...(annotation?.tags ?? [])];
+        if (allTags.length > 0) {
+          displayNodeTags(allTags);
+        }
+      }
     }
 
     renderer?.refresh();
@@ -400,6 +459,7 @@ function createRenderer(graphData: XrayGraph): void {
     resetHighlight();
     clearSelection();
     hideCyclePanel();
+    hideOrphanPanel();
     renderer?.refresh();
   });
 
@@ -451,6 +511,197 @@ function setupCycles(): void {
   }
 }
 
+// ── Orphan detection ───────────────────────────────────────────────────────────
+
+function setupOrphans(): void {
+  if (!engine || !renderer) return;
+
+  const orphanIds = engine.detectOrphans();
+  updateOrphanCount(orphanIds.length);
+
+  if (orphanIds.length > 0) {
+    setOrphanClickHandler(() => {
+      if (highlight.orphanNodes !== null) {
+        // Toggle off
+        resetHighlight();
+        hideOrphanPanel();
+        renderer?.refresh();
+        return;
+      }
+      // Highlight all orphan nodes and show panel
+      highlight.orphanNodes = new Set(orphanIds);
+      showOrphanPanel(
+        orphanIds,
+        (id) => engine!.getNode(id)?.path ?? id,
+      );
+      renderer?.refresh();
+    });
+  }
+}
+
+// ── Directory grouping ────────────────────────────────────────────────────────
+
+function setupDirectoryPanel(): void {
+  const btn = document.getElementById("dir-group-btn");
+  if (!btn) return;
+
+  let panelOpen = false;
+
+  btn.addEventListener("click", () => {
+    if (!engine) return;
+
+    if (panelOpen) {
+      hideDirectoryPanel();
+      resetHighlight();
+      renderer?.refresh();
+      panelOpen = false;
+      btn.classList.remove("active");
+      return;
+    }
+
+    panelOpen = true;
+    btn.classList.add("active");
+
+    const groups = engine.getDirectoryGroups();
+    const edgeCounts = engine.getInterModuleEdges();
+
+    showDirectoryPanel(groups, edgeCounts, (dir, nodeIds) => {
+      resetHighlight();
+      highlight.directoryNodes = new Set(nodeIds);
+      renderer?.refresh();
+      void dir;
+    });
+  });
+}
+
+// ── Annotations ───────────────────────────────────────────────────────────────
+
+function setupAnnotations(): void {
+  const btn = document.getElementById("annotate-btn");
+  if (!btn) return;
+
+  btn.addEventListener("click", () => {
+    if (!engine || !highlight.selected) return;
+    const nodeId = highlight.selected;
+    const annotation = engine.getAnnotation(nodeId);
+    const currentTags = annotation?.tags ?? [];
+
+    showAnnotationEditor(nodeId, currentTags, (newTags) => {
+      if (!engine) return;
+      engine.setAnnotation(nodeId, { tags: newTags });
+      // Refresh displayed tags
+      const nodeData = engine.getNode(nodeId);
+      const allTags = [...(nodeData?.metadata.tags ?? []), ...newTags];
+      displayNodeTags(allTags);
+      renderer?.refresh();
+    });
+  });
+}
+
+// ── Snapshot export ───────────────────────────────────────────────────────────
+
+function generateSnapshotHTML(graphData: XrayGraph, eng: Engine): string {
+  const snapshot = eng.getSnapshotData();
+  const snapshotJson = JSON.stringify(snapshot);
+  const graphJson = JSON.stringify({
+    root: graphData.root,
+    scanned_at: graphData.scanned_at,
+    languages: graphData.languages,
+    stats: graphData.stats,
+  });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Xray Snapshot — ${graphData.root}</title>
+  <script src="https://unpkg.com/graphology@0.25.4/dist/graphology.umd.js"><\/script>
+  <script src="https://unpkg.com/graphology-layout@0.6.1/dist/graphology-layout.min.js"><\/script>
+  <script src="https://unpkg.com/sigma@3.0.0/build/sigma.min.js"><\/script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    header { padding: 10px 16px; background: #1a1d27; border-bottom: 1px solid #2a2d3e; display: flex; align-items: center; gap: 12px; font-size: 0.85rem; }
+    #logo { font-weight: 700; color: #6366f1; font-size: 1rem; }
+    .meta { color: #64748b; font-size: 0.78rem; }
+    #container { flex: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <span id="logo">Xray</span>
+    <span class="meta">Snapshot · ${new Date().toISOString().split("T")[0]}</span>
+    <span class="meta" id="meta-root"></span>
+  </header>
+  <div id="container"></div>
+  <script>
+    const SNAPSHOT = ${snapshotJson};
+    const META = ${graphJson};
+    document.getElementById('meta-root').textContent = META.root + ' · ' + META.stats.file_count + ' files · ' + META.stats.edge_count + ' edges';
+
+    const Graph = graphology.Graph;
+    const graph = new Graph({ type: 'directed', multi: false });
+    for (const n of SNAPSHOT.nodes) {
+      graph.addNode(n.id, { label: n.label, x: n.x, y: n.y, color: n.color, size: n.size });
+    }
+    for (const e of SNAPSHOT.edges) {
+      try { graph.addEdge(e.source, e.target, { color: e.color, size: 1 }); } catch (_) {}
+    }
+
+    const { Sigma } = sigma;
+    new Sigma(graph, document.getElementById('container'), {
+      labelColor: { color: '#e2e8f0' },
+      defaultEdgeType: 'arrow',
+    });
+  <\/script>
+</body>
+</html>`;
+}
+
+function triggerDownload(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function setupExport(): void {
+  const exportBtn = document.getElementById("export-btn");
+  const dropdown = document.getElementById("export-dropdown");
+
+  exportBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (dropdown) {
+      dropdown.style.display = dropdown.style.display === "none" ? "flex" : "none";
+    }
+  });
+
+  document.addEventListener("click", () => {
+    if (dropdown) dropdown.style.display = "none";
+  });
+
+  document.getElementById("export-json")?.addEventListener("click", () => {
+    if (!engine) return;
+    const graphData = engine.getGraphData();
+    triggerDownload(JSON.stringify(graphData, null, 2), "xray-graph.json", "application/json");
+    if (dropdown) dropdown.style.display = "none";
+  });
+
+  document.getElementById("export-html")?.addEventListener("click", () => {
+    if (!engine) return;
+    const graphData = engine.getGraphData();
+    const html = generateSnapshotHTML(graphData, engine);
+    triggerDownload(html, "xray-snapshot.html", "text/html");
+    if (dropdown) dropdown.style.display = "none";
+  });
+}
+
 // ── Hot reload via SSE ────────────────────────────────────────────────────────
 
 async function reloadGraph(): Promise<void> {
@@ -492,6 +743,7 @@ async function init(): Promise<void> {
       setupModeToggle();
       setupLayoutToggle();
       setupProGate();
+      setupExport();
       return;
     }
     const graphData: XrayGraph = await resp.json() as XrayGraph;
@@ -499,11 +751,18 @@ async function init(): Promise<void> {
     loading.style.display = "none";
     createRenderer(graphData);
 
+    // Load annotations from backend (silently ignored if unavailable)
+    if (engine) await engine.loadAnnotations();
+
     setupSearch();
     setupModeToggle();
     setupLayoutToggle();
     setupProGate();
     setupCycles();
+    setupOrphans();
+    setupDirectoryPanel();
+    setupAnnotations();
+    setupExport();
     setupSSE();
   } catch (err) {
     loading.textContent = `Error loading graph: ${String(err)}`;

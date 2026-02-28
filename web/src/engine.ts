@@ -68,6 +68,18 @@ export interface CycleInfo {
   edges: string[]; // graphology edge keys in the cycle
 }
 
+export interface DirectoryGroup {
+  directory: string;
+  nodeIds: string[];
+}
+
+export interface AnnotationData {
+  tags: string[];
+  label?: string;
+  status?: string;
+  owner?: string;
+}
+
 const LANG_COLORS: Record<string, string> = {
   typescript: "#3b82f6",
   python: "#f97316",
@@ -105,6 +117,8 @@ export class Engine {
   private readonly functionNodes: Map<string, FunctionInfo> = new Map();
   private readonly expandedFiles: Map<string, string[]> = new Map();
   private cachedCycles: CycleInfo[] | null = null;
+  private cachedOrphans: string[] | null = null;
+  private annotations: Map<string, AnnotationData> = new Map();
 
   constructor(graphData: XrayGraph) {
     this.graphData = graphData;
@@ -151,7 +165,7 @@ export class Engine {
     if (this.graph.order === 0) return;
 
     const dirMap = new Map<string, string[]>();
-    this.graph.nodes().forEach((id) => {
+    this.graph.nodes().forEach((id: string) => {
       const path = this.graph.getNodeAttribute(id, "path") as string;
       const dir = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : ".";
       if (!dirMap.has(dir)) dirMap.set(dir, []);
@@ -236,7 +250,7 @@ export class Engine {
     }
 
     this.expandedFiles.set(fileId, addedIds);
-    this.invalidateCycleCache();
+    this.invalidateCache();
   }
 
   removeFunctionNodes(fileId: string): void {
@@ -248,14 +262,14 @@ export class Engine {
       this.functionNodes.delete(id);
     }
     this.expandedFiles.delete(fileId);
-    this.invalidateCycleCache();
+    this.invalidateCache();
   }
 
   collapseAll(): void {
     for (const fileId of [...this.expandedFiles.keys()]) {
       this.removeFunctionNodes(fileId);
     }
-    this.invalidateCycleCache();
+    this.invalidateCache();
   }
 
   hasExpandedFunctions(fileId: string): boolean {
@@ -309,7 +323,7 @@ export class Engine {
   search(query: string): string[] {
     if (!query) return [];
     const q = query.toLowerCase();
-    return this.graph.nodes().filter((id) => {
+    return this.graph.nodes().filter((id: string) => {
       const label = (this.graph.getNodeAttribute(id, "label") as string ?? "").toLowerCase();
       const path = (this.graph.getNodeAttribute(id, "path") as string ?? "").toLowerCase();
       return label.includes(q) || path.includes(q);
@@ -399,13 +413,116 @@ export class Engine {
     return edges;
   }
 
-  /** Invalidate cycle cache (call when graph structure changes) */
-  invalidateCycleCache(): void {
+  /** Detect orphan nodes — file nodes with in-degree 0 (not imported by anyone). */
+  detectOrphans(): string[] {
+    if (this.cachedOrphans !== null) return this.cachedOrphans;
+    const orphans = this.graph.nodes().filter((id: string) => {
+      if (this.functionNodes.has(id)) return false;
+      return this.graph.inDegree(id) === 0;
+    });
+    this.cachedOrphans = orphans;
+    return orphans;
+  }
+
+  /** Invalidate all computed caches (cycles, orphans). */
+  invalidateCache(): void {
     this.cachedCycles = null;
+    this.cachedOrphans = null;
+  }
+
+  /** @deprecated Use invalidateCache() instead */
+  invalidateCycleCache(): void {
+    this.invalidateCache();
+  }
+
+  /** Group file nodes by directory. */
+  getDirectoryGroups(): DirectoryGroup[] {
+    const groupMap = new Map<string, string[]>();
+    this.graph.nodes().forEach((id: string) => {
+      if (this.functionNodes.has(id)) return;
+      const path = this.graph.getNodeAttribute(id, "path") as string;
+      const dir = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : ".";
+      if (!groupMap.has(dir)) groupMap.set(dir, []);
+      groupMap.get(dir)!.push(id);
+    });
+    return [...groupMap.entries()].map(([directory, nodeIds]) => ({ directory, nodeIds }));
+  }
+
+  /** Count edges between pairs of different directories. */
+  getInterModuleEdges(): Array<{ from: string; to: string; count: number }> {
+    const counts = new Map<string, number>();
+    this.graph.edges().forEach((edge: string) => {
+      const src = this.graph.source(edge);
+      const tgt = this.graph.target(edge);
+      if (this.functionNodes.has(src) || this.functionNodes.has(tgt)) return;
+      const srcPath = this.graph.getNodeAttribute(src, "path") as string;
+      const tgtPath = this.graph.getNodeAttribute(tgt, "path") as string;
+      const srcDir = srcPath.includes("/") ? srcPath.substring(0, srcPath.lastIndexOf("/")) : ".";
+      const tgtDir = tgtPath.includes("/") ? tgtPath.substring(0, tgtPath.lastIndexOf("/")) : ".";
+      if (srcDir === tgtDir) return;
+      const key = `${srcDir}→${tgtDir}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    });
+    return [...counts.entries()].map(([key, count]) => {
+      const [from, to] = key.split("→") as [string, string];
+      return { from, to, count };
+    });
+  }
+
+  /** Load annotations from backend. Silently ignored on error. */
+  async loadAnnotations(): Promise<void> {
+    try {
+      const resp = await fetch("/api/annotations");
+      if (!resp.ok) return;
+      const data = await resp.json() as Record<string, AnnotationData>;
+      for (const [nodeId, annotation] of Object.entries(data)) {
+        this.annotations.set(nodeId, annotation);
+      }
+    } catch {
+      // Silently ignore — backend may not support annotations yet
+    }
+  }
+
+  getAnnotation(nodeId: string): AnnotationData | null {
+    return this.annotations.get(nodeId) ?? null;
+  }
+
+  setAnnotation(nodeId: string, data: Partial<AnnotationData>): void {
+    const existing = this.annotations.get(nodeId) ?? { tags: [] };
+    this.annotations.set(nodeId, { ...existing, ...data });
+  }
+
+  getAllAnnotations(): Map<string, AnnotationData> {
+    return new Map(this.annotations);
+  }
+
+  /** Get current graph node positions and colors for snapshot export. */
+  getSnapshotData(): {
+    nodes: Array<{ id: string; label: string; x: number; y: number; color: string; size: number }>;
+    edges: Array<{ source: string; target: string; color: string }>;
+  } {
+    const nodes = this.graph.nodes().map((id: string) => ({
+      id,
+      label: this.graph.getNodeAttribute(id, "label") as string,
+      x: this.graph.getNodeAttribute(id, "x") as number,
+      y: this.graph.getNodeAttribute(id, "y") as number,
+      color: this.graph.getNodeAttribute(id, "color") as string,
+      size: this.graph.getNodeAttribute(id, "size") as number,
+    }));
+    const edges = this.graph.edges().map((edge: string) => ({
+      source: this.graph.source(edge),
+      target: this.graph.target(edge),
+      color: this.graph.getEdgeAttribute(edge, "color") as string,
+    }));
+    return { nodes, edges };
   }
 
   getNode(id: string): XrayNode | null {
     return this.graphData.nodes.find((n) => n.id === id) ?? null;
+  }
+
+  getGraphData(): XrayGraph {
+    return this.graphData;
   }
 
   getOriginalColor(id: string): string {
