@@ -1,4 +1,5 @@
 pub mod languages;
+pub mod resolve;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod walker;
