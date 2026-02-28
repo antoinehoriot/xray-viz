@@ -23,6 +23,7 @@ pub fn resolve_imports(file_asts: &mut Vec<FileAst>, known_paths: &HashSet<Strin
                 "rust" => resolve_rust(&import.specifier, &file_dir, known_paths),
                 "python" => resolve_python(&import.specifier, &file_dir, known_paths),
                 "go" => resolve_go(&import.specifier, &file_dir, known_paths),
+                "java" => resolve_java(&import.specifier, known_paths),
                 _ => None,
             };
         }
@@ -249,6 +250,42 @@ fn resolve_go(specifier: &str, file_dir: &str, known_paths: &HashSet<String>) ->
     None
 }
 
+// ── Java ───────────────────────────────────────────────────────────────────────
+
+/// Resolve Java import specifiers to project-relative file paths.
+///
+/// Java imports are dotted package paths: `com.example.Foo`
+/// Maps to `com/example/Foo.java` — resolved against the project root.
+/// Standard library (java.*, javax.*) and third-party imports return None.
+fn resolve_java(specifier: &str, known_paths: &HashSet<String>) -> Option<String> {
+    // Standard library and third-party packages we can't resolve locally
+    if specifier.starts_with("java.")
+        || specifier.starts_with("javax.")
+        || specifier.starts_with("android.")
+        || specifier.starts_with("org.springframework.")
+        || specifier.starts_with("org.apache.")
+    {
+        return None;
+    }
+
+    // Convert dotted name to file path: com.example.Foo → com/example/Foo.java
+    let path = specifier.replace('.', "/");
+    let candidate = format!("{path}.java");
+    if known_paths.contains(&candidate) {
+        return Some(candidate);
+    }
+
+    // Also try with src/ prefix (common Maven/Gradle layout)
+    for prefix in &["src/main/java", "src/test/java", "src"] {
+        let candidate = format!("{prefix}/{path}.java");
+        if known_paths.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -367,6 +404,36 @@ mod tests {
     fn python_ignores_absolute() {
         let paths = known(&["os.py"]);
         let result = resolve_python("os", "mypackage", &paths);
+        assert_eq!(result, None);
+    }
+
+    // ── Java ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn java_resolves_local_class() {
+        let paths = known(&["com/example/Foo.java"]);
+        let result = resolve_java("com.example.Foo", &paths);
+        assert_eq!(result, Some("com/example/Foo.java".to_string()));
+    }
+
+    #[test]
+    fn java_resolves_with_src_prefix() {
+        let paths = known(&["src/main/java/com/example/Bar.java"]);
+        let result = resolve_java("com.example.Bar", &paths);
+        assert_eq!(result, Some("src/main/java/com/example/Bar.java".to_string()));
+    }
+
+    #[test]
+    fn java_ignores_stdlib() {
+        let paths = known(&[]);
+        let result = resolve_java("java.util.List", &paths);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn java_ignores_javax() {
+        let paths = known(&[]);
+        let result = resolve_java("javax.servlet.HttpServlet", &paths);
         assert_eq!(result, None);
     }
 
