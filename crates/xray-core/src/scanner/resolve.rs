@@ -252,37 +252,24 @@ fn resolve_go(specifier: &str, file_dir: &str, known_paths: &HashSet<String>) ->
 
 // ── Java ───────────────────────────────────────────────────────────────────────
 
-/// Resolve Java import specifiers to project-relative file paths.
+/// Resolve Java import declarations to file paths.
 ///
-/// Java imports are dotted package paths: `com.example.Foo`
-/// Maps to `com/example/Foo.java` — resolved against the project root.
-/// Standard library (java.*, javax.*) and third-party imports return None.
+/// Java imports are fully-qualified class names like `com.example.Foo`.
+/// We convert the dotted path to a slash path and append `.java`.
+/// Wildcard imports (`com.example.*`) are not resolvable to a single file.
 fn resolve_java(specifier: &str, known_paths: &HashSet<String>) -> Option<String> {
-    // Standard library and third-party packages we can't resolve locally
-    if specifier.starts_with("java.")
-        || specifier.starts_with("javax.")
-        || specifier.starts_with("android.")
-        || specifier.starts_with("org.springframework.")
-        || specifier.starts_with("org.apache.")
-    {
+    // Wildcard or star imports cannot be resolved to a single file
+    if specifier.ends_with('*') {
         return None;
     }
 
-    // Convert dotted name to file path: com.example.Foo → com/example/Foo.java
-    let path = specifier.replace('.', "/");
-    let candidate = format!("{path}.java");
-    if known_paths.contains(&candidate) {
-        return Some(candidate);
+    // Convert `com.example.Foo` → `com/example/Foo.java`
+    let path = format!("{}.java", specifier.replace('.', "/"));
+    if known_paths.contains(&path) {
+        return Some(path);
     }
 
-    // Also try with src/ prefix (common Maven/Gradle layout)
-    for prefix in &["src/main/java", "src/test/java", "src"] {
-        let candidate = format!("{prefix}/{path}.java");
-        if known_paths.contains(&candidate) {
-            return Some(candidate);
-        }
-    }
-
+    // Also try without the last component (in case specifier is a package)
     None
 }
 
@@ -407,33 +394,26 @@ mod tests {
         assert_eq!(result, None);
     }
 
-    // ── Java ─────────────────────────────────────────────────────────────────
+    // ── Java ──────────────────────────────────────────────────────────────────
 
     #[test]
-    fn java_resolves_local_class() {
+    fn java_resolves_qualified_class() {
         let paths = known(&["com/example/Foo.java"]);
         let result = resolve_java("com.example.Foo", &paths);
         assert_eq!(result, Some("com/example/Foo.java".to_string()));
     }
 
     #[test]
-    fn java_resolves_with_src_prefix() {
-        let paths = known(&["src/main/java/com/example/Bar.java"]);
-        let result = resolve_java("com.example.Bar", &paths);
-        assert_eq!(result, Some("src/main/java/com/example/Bar.java".to_string()));
-    }
-
-    #[test]
-    fn java_ignores_stdlib() {
-        let paths = known(&[]);
-        let result = resolve_java("java.util.List", &paths);
+    fn java_ignores_wildcard_import() {
+        let paths = known(&["com/example/Foo.java"]);
+        let result = resolve_java("com.example.*", &paths);
         assert_eq!(result, None);
     }
 
     #[test]
-    fn java_ignores_javax() {
-        let paths = known(&[]);
-        let result = resolve_java("javax.servlet.HttpServlet", &paths);
+    fn java_ignores_missing_class() {
+        let paths = known(&["com/example/Bar.java"]);
+        let result = resolve_java("com.example.Foo", &paths);
         assert_eq!(result, None);
     }
 

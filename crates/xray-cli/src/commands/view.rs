@@ -1,8 +1,8 @@
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
-use std::collections::HashSet;
 use xray_core::{
     cache::{db::CacheDb, graph_bin},
     detect_language,
@@ -55,10 +55,11 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 1. Scan (blocking; runs on a thread-pool thread) ──────────────────────
     eprintln!("xray: scanning '{}'…", args.path);
-    let graph_json: Arc<String> = tokio::task::spawn_blocking(move || scan_to_json(args))
-        .await
-        .map_err(|e| format!("Task join error: {e}"))?
-        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let (graph_json, functions_state) =
+        tokio::task::spawn_blocking(move || scan_to_json(args))
+            .await
+            .map_err(|e| format!("Task join error: {e}"))?
+            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
     // ── 2. Optionally write graph JSON to file ────────────────────────────────
     if let Some(ref file) = output_file {
@@ -85,7 +86,7 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 5. Start server in background ────────────────────────────────────────
     let server_handle =
-        tokio::spawn(async move { bound.serve(graph_json, web_dist).await });
+        tokio::spawn(async move { bound.serve(graph_json, functions_state, web_dist).await });
 
     // Brief pause so the port is ready before opening the browser.
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
@@ -117,11 +118,14 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
 
 // ── Internal scan helper ──────────────────────────────────────────────────────
 
-/// Synchronously scan `args.path` and return the serialized XrayGraph JSON.
+/// Synchronously scan `args.path` and return the serialized XrayGraph JSON
+/// plus a per-file functions map for the lazy loading API.
 ///
 /// Returns `Err(String)` so the result is `Send` and can be used in
 /// `tokio::task::spawn_blocking`.
-fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
+fn scan_to_json(
+    args: ViewArgs,
+) -> Result<(Arc<String>, crate::server::routes::FunctionsState), String> {
     let root = std::path::Path::new(&args.path)
         .canonicalize()
         .unwrap_or_else(|_| std::path::PathBuf::from(&args.path));
@@ -190,23 +194,26 @@ fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
         };
         let hash_str = blake3::hash(&content).to_hex().to_string();
 
-        let imports = match db.get_deps(&hash_str) {
-            Ok(Some(cached)) => {
+        // Try to get both imports and functions from cache.
+        // If either is missing, parse fresh and cache both.
+        let (imports, functions, classes) = match (
+            db.get_deps(&hash_str),
+            db.get_functions(&hash_str),
+        ) {
+            (Ok(Some(cached_imports)), Ok(Some((funcs, cls)))) => {
                 cache_hits += 1;
-                cached
+                (cached_imports, funcs, cls)
             }
-            Ok(None) => {
+            _ => {
                 let source = String::from_utf8_lossy(&content).into_owned();
                 let ast = parse_file(language, &source, &rel_path);
-                let imports = ast.imports.clone();
-                if let Err(err) = db.put_deps(&hash_str, &rel_path, language, &imports) {
+                if let Err(err) = db.put_deps(&hash_str, &rel_path, language, &ast.imports) {
                     tracing::warn!("Cache write failed for '{}': {err}", rel_path);
                 }
-                imports
-            }
-            Err(err) => {
-                tracing::warn!("Cache read error: {err}");
-                vec![]
+                if let Err(err) = db.put_functions(&hash_str, &ast.functions, &ast.classes) {
+                    tracing::warn!("Functions cache write failed for '{}': {err}", rel_path);
+                }
+                (ast.imports, ast.functions, ast.classes)
             }
         };
 
@@ -215,8 +222,8 @@ fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
             language: language.to_string(),
             imports,
             exports: vec![],
-            functions: vec![],
-            classes: vec![],
+            functions,
+            classes,
         });
 
         spinner.set_message(format!("Scanned {} files…", file_asts.len()));
@@ -229,8 +236,20 @@ fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
     let known_paths: HashSet<String> = file_asts.iter().map(|a| a.path.clone()).collect();
     resolve_imports(&mut file_asts, &known_paths);
 
+    // Build functions state for the lazy loading API (before moving file_asts into the builder).
+    let mut functions_map: HashMap<String, serde_json::Value> = HashMap::new();
+    for ast in &file_asts {
+        let data = serde_json::json!({
+            "file": ast.path,
+            "functions": ast.functions,
+            "classes": ast.classes,
+        });
+        functions_map.insert(ast.path.clone(), data);
+    }
+    let functions_state = Arc::new(functions_map);
+
     let builder = GraphBuilder::new(root.to_string_lossy().to_string());
-    let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits);
+    let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits, &args.level);
 
     // Persist bincode graph cache for instant re-serve.
     let graph_bin_path = cache_dir.join("graph.bin");
@@ -239,7 +258,7 @@ fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
     }
 
     let json = export::to_json(&graph).map_err(|e| e.to_string())?;
-    Ok(Arc::new(json))
+    Ok((Arc::new(json), functions_state))
 }
 
 fn parse_file(language: &str, source: &str, path: &str) -> FileAst {

@@ -1,12 +1,14 @@
 //! SQLite incremental cache (.xray/cache.db).
-//! Schema: file_cache (file_hash TEXT PK, path TEXT, language TEXT, deps_json TEXT, parsed_at INTEGER)
+//! Tables:
+//!   file_cache     (file_hash TEXT PK, path TEXT, language TEXT, deps_json TEXT, parsed_at INTEGER)
+//!   file_functions (file_hash TEXT PK, functions_json TEXT, classes_json TEXT)
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
     use rusqlite::{Connection, params};
     use serde::{Deserialize, Serialize};
     use std::path::Path;
-    use crate::scanner::{ImportDecl, ImportKind};
+    use crate::scanner::{ClassDecl, FunctionDecl, ImportDecl, ImportKind};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct CachedImport {
@@ -67,6 +69,11 @@ mod native {
                     language  TEXT NOT NULL,
                     deps_json TEXT NOT NULL,
                     parsed_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS file_functions (
+                    file_hash      TEXT PRIMARY KEY,
+                    functions_json TEXT NOT NULL,
+                    classes_json   TEXT NOT NULL
                 );",
             )?;
             Ok(Self { conn })
@@ -109,6 +116,43 @@ mod native {
             )?;
             Ok(())
         }
+
+        /// Retrieve cached function/class declarations for a file.
+        pub fn get_functions(
+            &self,
+            file_hash: &str,
+        ) -> Result<Option<(Vec<FunctionDecl>, Vec<ClassDecl>)>, Box<dyn std::error::Error>> {
+            let mut stmt = self.conn.prepare(
+                "SELECT functions_json, classes_json FROM file_functions WHERE file_hash = ?1",
+            )?;
+            let mut rows = stmt.query(params![file_hash])?;
+            if let Some(row) = rows.next()? {
+                let funcs_json: String = row.get(0)?;
+                let classes_json: String = row.get(1)?;
+                let funcs: Vec<FunctionDecl> = serde_json::from_str(&funcs_json)?;
+                let classes: Vec<ClassDecl> = serde_json::from_str(&classes_json)?;
+                Ok(Some((funcs, classes)))
+            } else {
+                Ok(None)
+            }
+        }
+
+        /// Store function/class declarations for a file.
+        pub fn put_functions(
+            &self,
+            file_hash: &str,
+            functions: &[FunctionDecl],
+            classes: &[ClassDecl],
+        ) -> Result<(), Box<dyn std::error::Error>> {
+            let funcs_json = serde_json::to_string(functions)?;
+            let classes_json = serde_json::to_string(classes)?;
+            self.conn.execute(
+                "INSERT OR REPLACE INTO file_functions (file_hash, functions_json, classes_json)
+                 VALUES (?1, ?2, ?3)",
+                params![file_hash, funcs_json, classes_json],
+            )?;
+            Ok(())
+        }
     }
 }
 
@@ -119,7 +163,7 @@ pub use native::CacheDb;
 #[cfg(not(target_arch = "wasm32"))]
 mod tests {
     use super::CacheDb;
-    use crate::scanner::{ImportDecl, ImportKind};
+    use crate::scanner::{CallSite, ClassDecl, FunctionDecl, ImportDecl, ImportKind};
 
     fn make_import(specifier: &str) -> ImportDecl {
         ImportDecl {
@@ -157,6 +201,50 @@ mod tests {
         let _ = std::fs::remove_file(&db_path);
         let db = CacheDb::open(&db_path).unwrap();
         let result = db.get_deps("notexist").unwrap();
+        assert!(result.is_none());
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn test_functions_roundtrip() {
+        let db_path = temp_db_path("funcs");
+        let _ = std::fs::remove_file(&db_path);
+        let db = CacheDb::open(&db_path).unwrap();
+
+        let functions = vec![FunctionDecl {
+            name: "doWork".to_string(),
+            line_start: 5,
+            line_end: 10,
+            calls: vec![CallSite {
+                callee: "helper".to_string(),
+                resolved_node_id: None,
+                line: 7,
+            }],
+            is_exported: true,
+            is_async: false,
+        }];
+        let classes = vec![ClassDecl {
+            name: "MyClass".to_string(),
+            line_start: 1,
+            line_end: 4,
+        }];
+
+        db.put_functions("xyz789", &functions, &classes).unwrap();
+        let (funcs, cls) = db.get_functions("xyz789").unwrap().unwrap();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name, "doWork");
+        assert_eq!(funcs[0].calls.len(), 1);
+        assert_eq!(cls.len(), 1);
+        assert_eq!(cls[0].name, "MyClass");
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn test_functions_miss() {
+        let db_path = temp_db_path("funcs_miss");
+        let _ = std::fs::remove_file(&db_path);
+        let db = CacheDb::open(&db_path).unwrap();
+        let result = db.get_functions("notexist").unwrap();
         assert!(result.is_none());
         let _ = std::fs::remove_file(&db_path);
     }

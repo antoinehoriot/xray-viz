@@ -2,26 +2,29 @@ package main
 
 import (
 	"fmt"
-	"strings"
+	"os"
 )
 
-// Greeter is a type that knows how to greet.
-type Greeter struct {
+// Person is a simple struct type.
+type Person struct {
 	Name string
+	Age  int
 }
 
-// String returns the string representation of a Greeter.
-func (g Greeter) String() string {
-	return "Greeter(" + g.Name + ")"
+// Greet returns a greeting string for a person.
+func Greet(p Person) string {
+	return fmt.Sprintf("Hello, %s!", p.Name)
 }
 
-// greet returns a greeting for the given name.
-func greet(name string) string {
-	return "Hello, " + strings.TrimSpace(name) + "!"
+// (Receiver method on Person)
+func (p Person) String() string {
+	return fmt.Sprintf("%s (%d)", p.Name, p.Age)
 }
 
 func main() {
-	g := Greeter{Name: "World"}
-	fmt.Println(greet(g.Name))
-	fmt.Println(g.String())
+	args := os.Args
+	_ = args
+
+	p := Person{Name: "World", Age: 42}
+	fmt.Println(Greet(p))
 }

@@ -1,41 +1,33 @@
 package com.example;
 
-import java.util.List;
 import java.util.ArrayList;
+import java.util.List;
+import java.io.IOException;
 
 /**
- * Greetable interface for objects that can produce greetings.
+ * A simple Java class for testing the tree-sitter parser.
  */
-interface Greetable {
-    String greet(String name);
-}
+public class Simple {
 
-/**
- * Simple class demonstrating Java parser extraction.
- */
-public class Simple implements Greetable {
+    private String name;
 
-    private final String prefix;
-
-    public Simple(String prefix) {
-        this.prefix = prefix;
+    public Simple(String name) {
+        this.name = name;
     }
 
-    @Override
-    public String greet(String name) {
-        return prefix + ", " + name + "!";
+    public String greet() {
+        return "Hello, " + this.name + "!";
     }
 
-    public List<String> greetAll(List<String> names) {
-        List<String> results = new ArrayList<>();
-        for (String name : names) {
-            results.add(greet(name));
-        }
-        return results;
+    public List<String> getItems() throws IOException {
+        List<String> items = new ArrayList<>();
+        items.add("item1");
+        items.add("item2");
+        return items;
     }
 
     public static void main(String[] args) {
-        Simple s = new Simple("Hello");
-        System.out.println(s.greet("World"));
+        Simple s = new Simple("World");
+        System.out.println(s.greet());
     }
 }

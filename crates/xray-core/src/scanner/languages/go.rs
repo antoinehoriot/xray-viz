@@ -9,7 +9,8 @@ use crate::scanner::{ClassDecl, FunctionDecl, ImportDecl, ImportKind};
 #[cfg(not(target_arch = "wasm32"))]
 const QUERY_SRC: &str = include_str!("../../../../../grammars/go.scm");
 
-/// Strip surrounding double-quotes from a Go interpreted string literal.
+/// Strip surrounding double-quotes from a Go import path literal.
+/// e.g. `"fmt"` → `fmt`, `"github.com/foo/bar"` → `github.com/foo/bar`
 #[cfg(not(target_arch = "wasm32"))]
 fn strip_quotes(s: &str) -> &str {
     let s = s.trim();
@@ -69,7 +70,6 @@ pub fn parse(source: &str, path: &str) -> FileAst {
 
     let mut imports: Vec<ImportDecl> = Vec::new();
     let mut functions: Vec<FunctionDecl> = Vec::new();
-    // Go types (structs, interfaces) modelled as classes in the IR
     let mut classes: Vec<ClassDecl> = Vec::new();
 
     let mut cursor = QueryCursor::new();
@@ -84,44 +84,33 @@ pub fn parse(source: &str, path: &str) -> FileAst {
 
             match name {
                 "import.specifier" => {
-                    // Go import paths are quoted string literals: import "fmt"
-                    let specifier = strip_quotes(text);
-                    imports.push(ImportDecl {
-                        specifier: specifier.to_string(),
-                        resolved_path: None,
-                        kind: ImportKind::Static,
-                        symbols: vec![],
-                        line,
-                    });
-                }
-                "function.name" => {
-                    if !functions.iter().any(|f| f.name == text && f.line_start == line) {
-                        functions.push(FunctionDecl {
-                            name: text.to_string(),
-                            line_start: line,
-                            line_end: cap.node.end_position().row as u32,
-                            calls: vec![],
-                            is_exported: false,
-                            is_async: false,
+                    // Go import paths come as `"fmt"` or `"github.com/foo/bar"` — strip quotes
+                    let specifier = strip_quotes(text).to_string();
+                    if !imports.iter().any(|i: &ImportDecl| i.specifier == specifier) {
+                        imports.push(ImportDecl {
+                            specifier,
+                            resolved_path: None,
+                            kind: ImportKind::Static,
+                            symbols: vec![],
+                            line,
                         });
                     }
                 }
-                "method.name" => {
-                    // Methods are treated as functions in the IR
-                    if !functions.iter().any(|f| f.name == text && f.line_start == line) {
+                "function.name" | "method.name" => {
+                    if !functions.iter().any(|f: &FunctionDecl| f.name == text && f.line_start == line) {
                         functions.push(FunctionDecl {
                             name: text.to_string(),
                             line_start: line,
                             line_end: cap.node.end_position().row as u32,
                             calls: vec![],
-                            is_exported: false,
+                            is_exported: text.starts_with(|c: char| c.is_uppercase()),
                             is_async: false,
                         });
                     }
                 }
                 "type.name" => {
-                    // Go type declarations (struct, interface) modelled as classes
-                    if !classes.iter().any(|c| c.name == text && c.line_start == line) {
+                    // Go type declarations modelled as classes in the IR
+                    if !classes.iter().any(|c: &ClassDecl| c.name == text && c.line_start == line) {
                         classes.push(ClassDecl {
                             name: text.to_string(),
                             line_start: line,
@@ -144,7 +133,7 @@ pub fn parse(source: &str, path: &str) -> FileAst {
     }
 }
 
-/// WASM stub.
+/// WASM stub — Go parser is native-only.
 #[cfg(target_arch = "wasm32")]
 pub fn parse(_source: &str, path: &str) -> FileAst {
     FileAst {
@@ -172,14 +161,19 @@ mod tests {
             "expected 'fmt' import, got: {specifiers:?}"
         );
         assert!(
-            specifiers.contains(&"strings"),
-            "expected 'strings' import, got: {specifiers:?}"
+            specifiers.contains(&"os"),
+            "expected 'os' import, got: {specifiers:?}"
         );
-        // Specifiers must not have surrounding quotes
-        for s in &specifiers {
+    }
+
+    #[test]
+    fn test_no_quotes_in_specifiers() {
+        let ast = parse(SIMPLE_GO, "simple.go");
+        for imp in &ast.imports {
             assert!(
-                !s.starts_with('"') && !s.starts_with('\''),
-                "specifier should not contain quotes: {s}"
+                !imp.specifier.starts_with('"'),
+                "specifier should not contain quotes: {}",
+                imp.specifier
             );
         }
     }
@@ -193,19 +187,21 @@ mod tests {
             "expected 'main' function, got: {names:?}"
         );
         assert!(
-            names.contains(&"greet"),
-            "expected 'greet' function, got: {names:?}"
+            names.contains(&"Greet"),
+            "expected 'Greet' function, got: {names:?}"
         );
     }
 
     #[test]
-    fn test_methods() {
+    fn test_exported_function_detection() {
         let ast = parse(SIMPLE_GO, "simple.go");
-        let names: Vec<&str> = ast.functions.iter().map(|f| f.name.as_str()).collect();
-        assert!(
-            names.contains(&"String"),
-            "expected 'String' method, got: {names:?}"
-        );
+        let greet = ast.functions.iter().find(|f| f.name == "Greet");
+        assert!(greet.is_some(), "Greet function not found");
+        assert!(greet.unwrap().is_exported, "Greet should be exported (uppercase)");
+
+        let main_fn = ast.functions.iter().find(|f| f.name == "main");
+        assert!(main_fn.is_some(), "main function not found");
+        assert!(!main_fn.unwrap().is_exported, "main should not be exported (lowercase)");
     }
 
     #[test]
@@ -213,8 +209,8 @@ mod tests {
         let ast = parse(SIMPLE_GO, "simple.go");
         let names: Vec<&str> = ast.classes.iter().map(|c| c.name.as_str()).collect();
         assert!(
-            names.contains(&"Greeter"),
-            "expected 'Greeter' type, got: {names:?}"
+            names.contains(&"Person"),
+            "expected 'Person' type, got: {names:?}"
         );
     }
 
