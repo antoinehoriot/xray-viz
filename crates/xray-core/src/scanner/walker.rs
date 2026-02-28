@@ -42,6 +42,8 @@ fn parse_source(source: &str, path: &str, language: &str) -> FileAst {
         "typescript" => languages::typescript::parse(source, path),
         "python" => languages::python::parse(source, path),
         "rust" => languages::rust::parse(source, path),
+        "go" => languages::go::parse(source, path),
+        "java" => languages::java::parse(source, path),
         _ => FileAst {
             path: path.to_string(),
             language: language.to_string(),
