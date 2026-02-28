@@ -50,6 +50,7 @@ fn assign_layers(n: usize, adj: &[Vec<usize>], in_degree: &[usize]) -> Vec<i32> 
 /// Barycenter crossing minimization: 2*passes sweeps over adjacent layer pairs.
 /// Forward sweep: sort layer li by barycenters of predecessors in li-1.
 /// Backward sweep: sort layer li by barycenters of successors in li+1.
+#[allow(clippy::ptr_arg)]
 fn barycenter_sort(
     order: &mut Vec<Vec<usize>>,
     adj: &[Vec<usize>],
@@ -246,6 +247,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::identity_op, clippy::erasing_op)]
     fn test_linear_chain_layers() {
         // a → b → c: layer[a]=0, layer[b]=1, layer[c]=2
         // y increases with layer, so y(a) < y(b) < y(c)
@@ -260,6 +262,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::identity_op, clippy::erasing_op)]
     fn test_diamond_topology() {
         // a → b, a → c, b → d, c → d
         let g = make_graph(
@@ -269,6 +272,7 @@ mod tests {
         let positions = layout(&g);
         assert_eq!(positions.len(), 8);
         // a at layer 0, b/c at layer 1, d at layer 2
+        #[allow(clippy::identity_op, clippy::erasing_op)]
         let ya = positions[0 * 2 + 1];
         let yd = positions[3 * 2 + 1];
         assert!(ya < yd, "a should have smaller y than d");

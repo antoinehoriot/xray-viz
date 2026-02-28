@@ -25,6 +25,7 @@ rusqlite = { workspace = true }
 bincode = { workspace = true, features = ["serde"] }
 tracing = { workspace = true }
 tree-sitter = { workspace = true }
+serde_yaml = { workspace = true }
 tree-sitter-typescript = "0.21"
 tree-sitter-python = "0.21"
 tree-sitter-rust = "0.21"

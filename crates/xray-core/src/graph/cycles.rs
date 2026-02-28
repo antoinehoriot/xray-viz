@@ -74,6 +74,7 @@ pub fn detect_cycles(graph: &XrayGraph) -> Vec<Cycle> {
 }
 
 /// Iterative Tarjan's strongconnect starting at `root`.
+#[allow(clippy::too_many_arguments, clippy::ptr_arg)]
 fn strongconnect(
     root: usize,
     adj: &[Vec<usize>],

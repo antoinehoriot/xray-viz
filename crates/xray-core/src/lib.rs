@@ -3,6 +3,9 @@ pub mod graph;
 pub mod layout;
 pub mod scanner;
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod annotations;
+
 pub use graph::types::{Edge, EdgeKind, GraphStats, Node, NodeKind, NodeMetadata, XrayGraph};
 
 /// Detect language from file extension.
