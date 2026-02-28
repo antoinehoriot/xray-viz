@@ -1,12 +1,14 @@
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Instant;
+use std::collections::HashSet;
 use xray_core::{
     cache::{db::CacheDb, graph_bin},
     detect_language,
     graph::{builder::GraphBuilder, export},
     scanner::{
         languages::{go, java, python, rust, typescript},
+        resolve::resolve_imports,
         ExportDecl, FileAst,
     },
 };
@@ -156,6 +158,10 @@ pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     let parse_duration_ms = start.elapsed().as_millis() as u64;
     spinner.finish_with_message(format!("Found {} files", file_asts.len()));
+
+    // Resolve import specifiers to actual file paths
+    let known_paths: HashSet<String> = file_asts.iter().map(|a| a.path.clone()).collect();
+    resolve_imports(&mut file_asts, &known_paths);
 
     // Build graph using petgraph StableGraph
     let builder = GraphBuilder::new(root.to_string_lossy().to_string());

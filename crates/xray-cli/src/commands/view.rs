@@ -2,12 +2,14 @@ use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 use std::time::Instant;
+use std::collections::HashSet;
 use xray_core::{
     cache::{db::CacheDb, graph_bin},
     detect_language,
     graph::{builder::GraphBuilder, export},
     scanner::{
         languages::{go, java, python, rust, typescript},
+        resolve::resolve_imports,
         ExportDecl, FileAst,
     },
 };
@@ -222,6 +224,10 @@ fn scan_to_json(args: ViewArgs) -> Result<Arc<String>, String> {
 
     let parse_duration_ms = start.elapsed().as_millis() as u64;
     spinner.finish_with_message(format!("Found {} files", file_asts.len()));
+
+    // Resolve import specifiers to actual file paths
+    let known_paths: HashSet<String> = file_asts.iter().map(|a| a.path.clone()).collect();
+    resolve_imports(&mut file_asts, &known_paths);
 
     let builder = GraphBuilder::new(root.to_string_lossy().to_string());
     let graph = builder.build_from_asts(file_asts, parse_duration_ms, cache_hits);
