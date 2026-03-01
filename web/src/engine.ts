@@ -78,6 +78,8 @@ export interface AnnotationData {
   label?: string;
   status?: string;
   owner?: string;
+  team?: string;
+  domain?: string;
 }
 
 const LANG_COLORS: Record<string, string> = {
@@ -482,6 +484,8 @@ export class Engine {
         this.annotations.set(nodeId, {
           tags: ann.tags ?? [],
           status: ann.status,
+          team: ann.team,
+          domain: ann.domain,
         });
       }
     } catch {
@@ -506,6 +510,8 @@ export class Engine {
       const entry: Record<string, unknown> = {};
       if (ann.tags && ann.tags.length > 0) entry["tags"] = ann.tags;
       if (ann.status) entry["status"] = ann.status;
+      if (ann.team) entry["team"] = ann.team;
+      if (ann.domain) entry["domain"] = ann.domain;
       payload[nodeId] = entry;
     }
     fetch("/api/annotations", {
