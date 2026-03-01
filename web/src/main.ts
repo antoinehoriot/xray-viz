@@ -618,7 +618,7 @@ function generateSnapshotHTML(graphData: XrayGraph, eng: Engine): string {
   <title>Xray Snapshot — ${graphData.root}</title>
   <script src="https://unpkg.com/graphology@0.25.4/dist/graphology.umd.js"><\/script>
   <script src="https://unpkg.com/graphology-layout@0.6.1/dist/graphology-layout.min.js"><\/script>
-  <script src="https://unpkg.com/sigma@3.0.0/build/sigma.min.js"><\/script>
+  <script src="https://unpkg.com/sigma@3.0.0/dist/sigma.min.js"><\/script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: #0f1117; color: #e2e8f0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; height: 100vh; display: flex; flex-direction: column; }
