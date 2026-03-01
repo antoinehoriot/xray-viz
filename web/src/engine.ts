@@ -474,9 +474,15 @@ export class Engine {
     try {
       const resp = await fetch("/api/annotations");
       if (!resp.ok) return;
-      const data = await resp.json() as Record<string, AnnotationData>;
-      for (const [nodeId, annotation] of Object.entries(data)) {
-        this.annotations.set(nodeId, annotation);
+      const data = (await resp.json()) as Record<
+        string,
+        { team?: string; domain?: string; status?: string; tags?: string[] }
+      >;
+      for (const [nodeId, ann] of Object.entries(data)) {
+        this.annotations.set(nodeId, {
+          tags: ann.tags ?? [],
+          status: ann.status,
+        });
       }
     } catch {
       // Silently ignore — backend may not support annotations yet
@@ -490,6 +496,25 @@ export class Engine {
   setAnnotation(nodeId: string, data: Partial<AnnotationData>): void {
     const existing = this.annotations.get(nodeId) ?? { tags: [] };
     this.annotations.set(nodeId, { ...existing, ...data });
+    this.persistAnnotations();
+  }
+
+  /** Persist all annotations to the backend via PUT /api/annotations. */
+  private persistAnnotations(): void {
+    const payload: Record<string, Record<string, unknown>> = {};
+    for (const [nodeId, ann] of this.annotations) {
+      const entry: Record<string, unknown> = {};
+      if (ann.tags && ann.tags.length > 0) entry["tags"] = ann.tags;
+      if (ann.status) entry["status"] = ann.status;
+      payload[nodeId] = entry;
+    }
+    fetch("/api/annotations", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Best-effort persistence
+    });
   }
 
   getAllAnnotations(): Map<string, AnnotationData> {

@@ -1,13 +1,16 @@
 //! Graph node annotations: read/write `.xray/annotations.yml`.
 //!
-//! Annotations attach human-readable metadata (team, domain, status) to graph
-//! nodes (identified by their relative file path). The YAML file format is:
+//! Annotations attach human-readable metadata (team, domain, status, tags) to
+//! graph nodes (identified by their relative file path). The YAML file format is:
 //!
 //! ```yaml
 //! src/main.ts:
 //!   team: platform
 //!   domain: core
 //!   status: stable
+//!   tags:
+//!     - auth
+//!     - legacy
 //! src/utils/helpers.ts:
 //!   domain: shared
 //! ```
@@ -30,6 +33,10 @@ pub struct NodeAnnotation {
     /// Status label (e.g. "stable", "wip", "deprecated").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+
+    /// Free-form tags (e.g. ["critical", "needs-refactor"]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 /// Map from relative node path to its annotation.
@@ -91,6 +98,7 @@ mod tests {
                 team: Some("platform".to_string()),
                 domain: Some("core".to_string()),
                 status: Some("stable".to_string()),
+                tags: vec!["critical".to_string()],
             },
         );
         ann.insert(
@@ -99,6 +107,7 @@ mod tests {
                 team: None,
                 domain: Some("shared".to_string()),
                 status: None,
+                tags: vec![],
             },
         );
         save(&root, &ann).unwrap();
@@ -108,6 +117,9 @@ mod tests {
         assert_eq!(main_ann.team.as_deref(), Some("platform"));
         assert_eq!(main_ann.domain.as_deref(), Some("core"));
         assert_eq!(main_ann.status.as_deref(), Some("stable"));
+        assert_eq!(main_ann.tags, vec!["critical".to_string()]);
+        let utils_ann = loaded.get("src/utils.ts").unwrap();
+        assert!(utils_ann.tags.is_empty());
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -128,5 +140,6 @@ mod tests {
         assert!(ann.team.is_none());
         assert!(ann.domain.is_none());
         assert!(ann.status.is_none());
+        assert!(ann.tags.is_empty());
     }
 }

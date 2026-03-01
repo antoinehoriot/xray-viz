@@ -30,6 +30,10 @@ pub struct AnnotateArgs {
     #[arg(long)]
     pub status: Option<String>,
 
+    /// Comma-separated tags to set on the node (e.g. "critical,needs-refactor")
+    #[arg(long, use_value_delimiter = true)]
+    pub tags: Option<Vec<String>>,
+
     /// List all annotations in the repository
     #[arg(long)]
     pub list: bool,
@@ -62,6 +66,7 @@ pub fn run(args: AnnotateArgs) -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(t) = &node_ann.team { parts.push(format!("team={t}")); }
                 if let Some(d) = &node_ann.domain { parts.push(format!("domain={d}")); }
                 if let Some(s) = &node_ann.status { parts.push(format!("status={s}")); }
+                if !node_ann.tags.is_empty() { parts.push(format!("tags={}", node_ann.tags.join(","))); }
                 println!("{path}: {}", parts.join("  "));
             }
         }
@@ -91,8 +96,8 @@ pub fn run(args: AnnotateArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    if args.team.is_none() && args.domain.is_none() && args.status.is_none() {
-        return Err("Provide at least one of --team, --domain, --status".into());
+    if args.team.is_none() && args.domain.is_none() && args.status.is_none() && args.tags.is_none() {
+        return Err("Provide at least one of --team, --domain, --status, --tags".into());
     }
 
     let mut ann = annotations::load(&root)?;
@@ -106,6 +111,9 @@ pub fn run(args: AnnotateArgs) -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(s) = args.status {
         entry.status = Some(s);
+    }
+    if let Some(t) = args.tags {
+        entry.tags = t;
     }
 
     annotations::save(&root, &ann)?;
