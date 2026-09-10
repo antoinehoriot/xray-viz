@@ -94,7 +94,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                     });
                 }
                 "function.name" => {
-                    if !functions.iter().any(|f| f.name == text && f.line_start == line) {
+                    if !functions
+                        .iter()
+                        .any(|f| f.name == text && f.line_start == line)
+                    {
                         functions.push(FunctionDecl {
                             name: text.to_string(),
                             line_start: line,
@@ -185,14 +188,20 @@ mod tests {
         let ast = parse(SIMPLE_PY, "simple.py");
         let names: Vec<&str> = ast.functions.iter().map(|f| f.name.as_str()).collect();
         assert!(names.contains(&"main"), "expected 'main' function");
-        assert!(names.contains(&"load_config"), "expected 'load_config' function");
+        assert!(
+            names.contains(&"load_config"),
+            "expected 'load_config' function"
+        );
     }
 
     #[test]
     fn test_classes() {
         let ast = parse(SIMPLE_PY, "simple.py");
         let names: Vec<&str> = ast.classes.iter().map(|c| c.name.as_str()).collect();
-        assert!(names.contains(&"FileScanner"), "expected 'FileScanner' class");
+        assert!(
+            names.contains(&"FileScanner"),
+            "expected 'FileScanner' class"
+        );
     }
 
     #[test]

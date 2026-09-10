@@ -139,8 +139,7 @@ fn strongconnect(
 
                 // Only report SCCs with more than 1 node (actual cycles)
                 if scc.len() > 1 {
-                    let nodes: Vec<NodeId> =
-                        scc.iter().map(|&i| node_ids[i].to_string()).collect();
+                    let nodes: Vec<NodeId> = scc.iter().map(|&i| node_ids[i].to_string()).collect();
                     cycles.push(Cycle { nodes });
                 }
             }
@@ -272,10 +271,7 @@ mod tests {
             vec![unresolved_edge("a", "b"), unresolved_edge("b", "a")],
         );
         let cycles = detect_cycles(&g);
-        assert!(
-            cycles.is_empty(),
-            "Unresolved edges should not form cycles"
-        );
+        assert!(cycles.is_empty(), "Unresolved edges should not form cycles");
     }
 
     #[test]
@@ -295,7 +291,10 @@ mod tests {
         );
         let cycles = detect_cycles(&g);
         assert_eq!(cycles.len(), 2);
-        assert!(cycles[0].nodes.len() <= cycles[1].nodes.len(), "Cycles should be sorted by length");
+        assert!(
+            cycles[0].nodes.len() <= cycles[1].nodes.len(),
+            "Cycles should be sorted by length"
+        );
     }
 
     #[test]

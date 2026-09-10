@@ -3,7 +3,7 @@
 
 project:
   name: codebase-viz
-  root: /Users/antoinehoriot/Projects/codebase-viz
+  root: .
   canonicalBranch: main
   qualityGates:
     - name: Tests

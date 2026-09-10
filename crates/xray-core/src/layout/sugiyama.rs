@@ -38,7 +38,12 @@ fn assign_layers(n: usize, adj: &[Vec<usize>], in_degree: &[usize]) -> Vec<i32> 
     }
 
     // Fallback: cycle members with no non-cycle predecessor remain at -1
-    let max_layer = layer.iter().filter(|&&l| l >= 0).max().copied().unwrap_or(0);
+    let max_layer = layer
+        .iter()
+        .filter(|&&l| l >= 0)
+        .max()
+        .copied()
+        .unwrap_or(0);
     for l in &mut layer {
         if *l < 0 {
             *l = max_layer + 1;
@@ -109,9 +114,7 @@ fn barycenter_sort(
                 })
                 .collect();
 
-            bary.sort_by(|a, b| {
-                a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal)
-            });
+            bary.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
             // Update positions for this layer
             for (i, &(node, _)) in bary.iter().enumerate() {
@@ -296,7 +299,10 @@ mod tests {
 
     #[test]
     fn test_positions_count_matches_nodes() {
-        let g = make_graph(&["a", "b", "c", "d", "e"], &[("a", "b"), ("b", "c"), ("c", "d")]);
+        let g = make_graph(
+            &["a", "b", "c", "d", "e"],
+            &[("a", "b"), ("b", "c"), ("c", "d")],
+        );
         let positions = layout(&g);
         assert_eq!(positions.len(), g.nodes.len() * 2);
     }

@@ -22,6 +22,7 @@ fn strip_quotes(s: &str) -> &str {
 
 /// Parse Go source into a FileAst using tree-sitter.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::collapsible_match)]
 pub fn parse(source: &str, path: &str) -> FileAst {
     let language = tree_sitter_go::language();
 
@@ -86,7 +87,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                 "import.specifier" => {
                     // Go import paths come as `"fmt"` or `"github.com/foo/bar"` — strip quotes
                     let specifier = strip_quotes(text).to_string();
-                    if !imports.iter().any(|i: &ImportDecl| i.specifier == specifier) {
+                    if !imports
+                        .iter()
+                        .any(|i: &ImportDecl| i.specifier == specifier)
+                    {
                         imports.push(ImportDecl {
                             specifier,
                             resolved_path: None,
@@ -97,7 +101,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                     }
                 }
                 "function.name" | "method.name" => {
-                    if !functions.iter().any(|f: &FunctionDecl| f.name == text && f.line_start == line) {
+                    if !functions
+                        .iter()
+                        .any(|f: &FunctionDecl| f.name == text && f.line_start == line)
+                    {
                         functions.push(FunctionDecl {
                             name: text.to_string(),
                             line_start: line,
@@ -110,7 +117,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                 }
                 "type.name" => {
                     // Go type declarations modelled as classes in the IR
-                    if !classes.iter().any(|c: &ClassDecl| c.name == text && c.line_start == line) {
+                    if !classes
+                        .iter()
+                        .any(|c: &ClassDecl| c.name == text && c.line_start == line)
+                    {
                         classes.push(ClassDecl {
                             name: text.to_string(),
                             line_start: line,
@@ -197,11 +207,17 @@ mod tests {
         let ast = parse(SIMPLE_GO, "simple.go");
         let greet = ast.functions.iter().find(|f| f.name == "Greet");
         assert!(greet.is_some(), "Greet function not found");
-        assert!(greet.unwrap().is_exported, "Greet should be exported (uppercase)");
+        assert!(
+            greet.unwrap().is_exported,
+            "Greet should be exported (uppercase)"
+        );
 
         let main_fn = ast.functions.iter().find(|f| f.name == "main");
         assert!(main_fn.is_some(), "main function not found");
-        assert!(!main_fn.unwrap().is_exported, "main should not be exported (lowercase)");
+        assert!(
+            !main_fn.unwrap().is_exported,
+            "main should not be exported (lowercase)"
+        );
     }
 
     #[test]

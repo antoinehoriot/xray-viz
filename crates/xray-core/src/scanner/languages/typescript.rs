@@ -122,7 +122,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                     });
                 }
                 "function.name" => {
-                    if !functions.iter().any(|f| f.name == text && f.line_start == line) {
+                    if !functions
+                        .iter()
+                        .any(|f| f.name == text && f.line_start == line)
+                    {
                         functions.push(FunctionDecl {
                             name: text.to_string(),
                             line_start: line,

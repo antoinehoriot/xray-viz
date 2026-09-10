@@ -17,16 +17,10 @@ pub fn to_json_pretty(graph: &XrayGraph) -> Result<String, serde_json::Error> {
 pub fn to_dot(graph: &XrayGraph) -> String {
     let mut out = String::from("digraph xray {\n  rankdir=LR;\n  node [shape=box];\n");
     for node in &graph.nodes {
-        out.push_str(&format!(
-            "  \"{}\" [label=\"{}\"];\n",
-            node.id, node.label
-        ));
+        out.push_str(&format!("  \"{}\" [label=\"{}\"];\n", node.id, node.label));
     }
     for edge in &graph.edges {
-        out.push_str(&format!(
-            "  \"{}\" -> \"{}\";\n",
-            edge.source, edge.target
-        ));
+        out.push_str(&format!("  \"{}\" -> \"{}\";\n", edge.source, edge.target));
     }
     out.push('}');
     out
@@ -85,7 +79,9 @@ pub fn to_ai_json(export: &XrayExport, exported_at: &str) -> Result<String, serd
     let entry_node = AiEntryNode {
         id: entry.map(|n| n.id.clone()).unwrap_or_default(),
         path: entry.map(|n| n.path.clone()).unwrap_or_default(),
-        exports: entry.map(|n| n.metadata.exports.clone()).unwrap_or_default(),
+        exports: entry
+            .map(|n| n.metadata.exports.clone())
+            .unwrap_or_default(),
     };
 
     let payload = AiExportJson {
@@ -175,7 +171,11 @@ pub fn to_ai_markdown(export: &XrayExport, exported_at: &str) -> String {
             .iter()
             .filter(|e| e.source == entry.id)
             .filter_map(|e| {
-                export.nodes.iter().find(|n| n.id == e.target).map(|n| n.path.as_str())
+                export
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == e.target)
+                    .map(|n| n.path.as_str())
             })
             .collect();
         if !direct_deps.is_empty() {
@@ -191,7 +191,11 @@ pub fn to_ai_markdown(export: &XrayExport, exported_at: &str) -> String {
             .iter()
             .filter(|e| e.target == entry.id)
             .filter_map(|e| {
-                export.nodes.iter().find(|n| n.id == e.source).map(|n| n.path.as_str())
+                export
+                    .nodes
+                    .iter()
+                    .find(|n| n.id == e.source)
+                    .map(|n| n.path.as_str())
             })
             .collect();
         if !direct_deps_on.is_empty() {
@@ -204,7 +208,13 @@ pub fn to_ai_markdown(export: &XrayExport, exported_at: &str) -> String {
 
         // Dependency Tree (ASCII art)
         out.push_str("## Dependency Tree\n\n```\n");
-        let tree = build_tree(&entry.id, &export.nodes, &export.edges, 0, &mut HashSet::new());
+        let tree = build_tree(
+            &entry.id,
+            &export.nodes,
+            &export.edges,
+            0,
+            &mut HashSet::new(),
+        );
         out.push_str(&tree);
         out.push_str("```\n\n");
     }
@@ -240,8 +250,14 @@ pub fn to_ai_markdown(export: &XrayExport, exported_at: &str) -> String {
         .map(|n| (n.id.as_str(), n.path.as_str()))
         .collect();
     for edge in &export.edges {
-        let src = node_by_id.get(edge.source.as_str()).copied().unwrap_or(&edge.source);
-        let tgt = node_by_id.get(edge.target.as_str()).copied().unwrap_or(&edge.target);
+        let src = node_by_id
+            .get(edge.source.as_str())
+            .copied()
+            .unwrap_or(&edge.source);
+        let tgt = node_by_id
+            .get(edge.target.as_str())
+            .copied()
+            .unwrap_or(&edge.target);
         let kind = format!("{:?}", edge.kind);
         out.push_str(&format!("| {} | {} | {} |\n", src, tgt, kind));
     }
@@ -265,8 +281,12 @@ fn build_tree(
     if visited.contains(node_id) {
         // Cycle — show path without recursing.
         let prefix = if depth == 0 { "" } else { "    " };
-        return format!("{}└── {} (cycle)\n", "│   ".repeat(depth.saturating_sub(1)), node.path)
-            .replace(&"│   ".repeat(depth.saturating_sub(1)), prefix);
+        return format!(
+            "{}└── {} (cycle)\n",
+            "│   ".repeat(depth.saturating_sub(1)),
+            node.path
+        )
+        .replace(&"│   ".repeat(depth.saturating_sub(1)), prefix);
     }
     visited.insert(node_id.to_string());
 
@@ -279,7 +299,12 @@ fn build_tree(
     let children: Vec<&str> = edges
         .iter()
         .filter(|e| e.source == node_id)
-        .filter_map(|e| nodes.iter().find(|n| n.id == e.target).map(|n| n.id.as_str()))
+        .filter_map(|e| {
+            nodes
+                .iter()
+                .find(|n| n.id == e.target)
+                .map(|n| n.id.as_str())
+        })
         .collect();
 
     for (i, child_id) in children.iter().enumerate() {

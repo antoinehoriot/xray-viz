@@ -71,14 +71,18 @@ pub fn extract_subgraph(
     let forward: HashMap<&str, Vec<&str>> = {
         let mut m: HashMap<&str, Vec<&str>> = HashMap::new();
         for e in &graph.edges {
-            m.entry(e.source.as_str()).or_default().push(e.target.as_str());
+            m.entry(e.source.as_str())
+                .or_default()
+                .push(e.target.as_str());
         }
         m
     };
     let reverse: HashMap<&str, Vec<&str>> = {
         let mut m: HashMap<&str, Vec<&str>> = HashMap::new();
         for e in &graph.edges {
-            m.entry(e.target.as_str()).or_default().push(e.source.as_str());
+            m.entry(e.target.as_str())
+                .or_default()
+                .push(e.source.as_str());
         }
         m
     };
@@ -158,7 +162,9 @@ fn topological_sort(nodes: &[Node], edges: &[Edge]) -> Vec<NodeId> {
     let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
     for e in edges {
         if node_ids.contains(e.source.as_str()) && node_ids.contains(e.target.as_str()) {
-            adj.entry(e.source.as_str()).or_default().push(e.target.as_str());
+            adj.entry(e.source.as_str())
+                .or_default()
+                .push(e.target.as_str());
             *in_degree.entry(e.target.as_str()).or_insert(0) += 1;
         }
     }
@@ -264,7 +270,11 @@ mod tests {
     fn test_extract_downstream_depth1() {
         // a → b → c; from=a depth=1 downstream → {a, b}
         let g = make_graph(
-            vec![make_node("a", "a.ts"), make_node("b", "b.ts"), make_node("c", "c.ts")],
+            vec![
+                make_node("a", "a.ts"),
+                make_node("b", "b.ts"),
+                make_node("c", "c.ts"),
+            ],
             vec![make_edge("a", "b"), make_edge("b", "c")],
         );
         let export = extract_subgraph(&g, "a.ts", 1, "downstream", 200);
@@ -291,7 +301,11 @@ mod tests {
     fn test_extract_both() {
         // a → b → c; from=b both → {a, b, c}
         let g = make_graph(
-            vec![make_node("a", "a.ts"), make_node("b", "b.ts"), make_node("c", "c.ts")],
+            vec![
+                make_node("a", "a.ts"),
+                make_node("b", "b.ts"),
+                make_node("c", "c.ts"),
+            ],
             vec![make_edge("a", "b"), make_edge("b", "c")],
         );
         let export = extract_subgraph(&g, "b.ts", 2, "both", 200);
@@ -303,8 +317,12 @@ mod tests {
 
     #[test]
     fn test_max_nodes_cap() {
-        let nodes: Vec<Node> = (0..10).map(|i| make_node(&format!("n{i}"), &format!("n{i}.ts"))).collect();
-        let edges: Vec<Edge> = (0..9).map(|i| make_edge(&format!("n{i}"), &format!("n{}", i + 1))).collect();
+        let nodes: Vec<Node> = (0..10)
+            .map(|i| make_node(&format!("n{i}"), &format!("n{i}.ts")))
+            .collect();
+        let edges: Vec<Edge> = (0..9)
+            .map(|i| make_edge(&format!("n{i}"), &format!("n{}", i + 1)))
+            .collect();
         let g = make_graph(nodes, edges);
         let export = extract_subgraph(&g, "n0.ts", 100, "downstream", 3);
         assert!(export.nodes.len() <= 3);
@@ -321,7 +339,11 @@ mod tests {
     #[test]
     fn test_dependency_order_linear() {
         // a → b → c; topo order should be [a, b, c]
-        let nodes = vec![make_node("a", "a.ts"), make_node("b", "b.ts"), make_node("c", "c.ts")];
+        let nodes = vec![
+            make_node("a", "a.ts"),
+            make_node("b", "b.ts"),
+            make_node("c", "c.ts"),
+        ];
         let edges = vec![make_edge("a", "b"), make_edge("b", "c")];
         let order = topological_sort(&nodes, &edges);
         let a_pos = order.iter().position(|x| x == "a").unwrap();

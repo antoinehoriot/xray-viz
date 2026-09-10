@@ -5,6 +5,5 @@
 !config.yaml
 !agent-manifest.json
 !hooks.json
-!groups.json
 !agent-defs/
 !README.md

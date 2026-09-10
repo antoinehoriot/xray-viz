@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use xray_core::graph::types::XrayGraph;
 use xray_core::layout::force::ForceState;
-use std::collections::HashMap;
 
 /// XrayEngine — WASM-bindgen entry point.
 ///
@@ -26,8 +26,8 @@ impl XrayEngine {
     /// Construct from graph JSON string (as produced by `xray scan`).
     #[wasm_bindgen(constructor)]
     pub fn new(graph_json: &str) -> Result<XrayEngine, JsValue> {
-        let graph: XrayGraph = serde_json::from_str(graph_json)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+        let graph: XrayGraph =
+            serde_json::from_str(graph_json).map_err(|e| JsValue::from_str(&e.to_string()))?;
         let n = graph.nodes.len();
         let node_idx = graph
             .nodes
@@ -162,12 +162,7 @@ impl XrayEngine {
         if zoom >= 0.1 {
             // Medium zoom: exclude Function-kind nodes (file-level focus)
             use xray_core::graph::types::NodeKind;
-            visible.retain(|&i| {
-                !matches!(
-                    self.graph.nodes[i as usize].kind,
-                    NodeKind::Function
-                )
-            });
+            visible.retain(|&i| !matches!(self.graph.nodes[i as usize].kind, NodeKind::Function));
             return visible;
         }
 

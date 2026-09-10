@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "overstory/**"]
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -38,6 +38,25 @@ jobs:
       - run: cargo clippy --all-targets --all-features -- -D warnings
       - run: cargo build --all
       - run: cargo test --all
+
+  web:
+    name: Web UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install dependencies
+        working-directory: web
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        working-directory: web
+        run: bun run typecheck
+      - name: Build
+        working-directory: web
+        run: bun run build
 
   wasm-build:
     name: WASM Build

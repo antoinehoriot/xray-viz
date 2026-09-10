@@ -75,11 +75,10 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 1. Scan (blocking; runs on a thread-pool thread) ──────────────────────
     eprintln!("xray: scanning '{}'…", args.path);
-    let (graph_json, functions_map) =
-        tokio::task::spawn_blocking(move || scan_to_json(args))
-            .await
-            .map_err(|e| format!("Task join error: {e}"))?
-            .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let (graph_json, functions_map) = tokio::task::spawn_blocking(move || scan_to_json(args))
+        .await
+        .map_err(|e| format!("Task join error: {e}"))?
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
 
     // ── 2. Optionally write graph JSON to file ────────────────────────────────
     if let Some(ref file) = output_file {
@@ -130,8 +129,7 @@ pub async fn run(args: ViewArgs) -> Result<(), Box<dyn std::error::Error>> {
 
     // ── 7. Start server in background ────────────────────────────────────────
     let state_for_server = state.clone();
-    let server_handle =
-        tokio::spawn(async move { bound.serve(state_for_server, web_dist).await });
+    let server_handle = tokio::spawn(async move { bound.serve(state_for_server, web_dist).await });
 
     // Brief pause so the port is ready before opening the browser.
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
@@ -208,10 +206,7 @@ fn spawn_watcher(
             }
 
             // Only rescan if at least one changed path is a recognized source file
-            let has_source = event
-                .paths
-                .iter()
-                .any(|p| detect_language(p).is_some());
+            let has_source = event.paths.iter().any(|p| detect_language(p).is_some());
             if !has_source {
                 continue;
             }
@@ -240,8 +235,7 @@ fn spawn_watcher(
             match scan_to_json(rescan_args) {
                 Ok((new_json, new_fns)) => {
                     *state.graph_json.write().unwrap() = (*new_json).clone();
-                    let fns_inner =
-                        Arc::try_unwrap(new_fns).unwrap_or_else(|arc| (*arc).clone());
+                    let fns_inner = Arc::try_unwrap(new_fns).unwrap_or_else(|arc| (*arc).clone());
                     *state.functions.write().unwrap() = fns_inner;
                     let _ = tx.send(());
                     eprintln!("xray: graph updated");
@@ -336,26 +330,24 @@ fn scan_to_json(
 
         // Try to get both imports and functions from cache.
         // If either is missing, parse fresh and cache both.
-        let (imports, functions, classes) = match (
-            db.get_deps(&hash_str),
-            db.get_functions(&hash_str),
-        ) {
-            (Ok(Some(cached_imports)), Ok(Some((funcs, cls)))) => {
-                cache_hits += 1;
-                (cached_imports, funcs, cls)
-            }
-            _ => {
-                let source = String::from_utf8_lossy(&content).into_owned();
-                let ast = parse_file(language, &source, &rel_path);
-                if let Err(err) = db.put_deps(&hash_str, &rel_path, language, &ast.imports) {
-                    tracing::warn!("Cache write failed for '{}': {err}", rel_path);
+        let (imports, functions, classes) =
+            match (db.get_deps(&hash_str), db.get_functions(&hash_str)) {
+                (Ok(Some(cached_imports)), Ok(Some((funcs, cls)))) => {
+                    cache_hits += 1;
+                    (cached_imports, funcs, cls)
                 }
-                if let Err(err) = db.put_functions(&hash_str, &ast.functions, &ast.classes) {
-                    tracing::warn!("Functions cache write failed for '{}': {err}", rel_path);
+                _ => {
+                    let source = String::from_utf8_lossy(&content).into_owned();
+                    let ast = parse_file(language, &source, &rel_path);
+                    if let Err(err) = db.put_deps(&hash_str, &rel_path, language, &ast.imports) {
+                        tracing::warn!("Cache write failed for '{}': {err}", rel_path);
+                    }
+                    if let Err(err) = db.put_functions(&hash_str, &ast.functions, &ast.classes) {
+                        tracing::warn!("Functions cache write failed for '{}': {err}", rel_path);
+                    }
+                    (ast.imports, ast.functions, ast.classes)
                 }
-                (ast.imports, ast.functions, ast.classes)
-            }
-        };
+            };
 
         file_asts.push(FileAst {
             path: rel_path.clone(),

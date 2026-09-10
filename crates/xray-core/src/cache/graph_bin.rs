@@ -10,8 +10,7 @@ mod native {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let encoded =
-            bincode::serde::encode_to_vec(graph, bincode::config::standard())?;
+        let encoded = bincode::serde::encode_to_vec(graph, bincode::config::standard())?;
         std::fs::write(path, encoded)?;
         Ok(())
     }
@@ -21,8 +20,7 @@ mod native {
             return Ok(None);
         }
         let data = std::fs::read(path)?;
-        let (graph, _) =
-            bincode::serde::decode_from_slice(&data, bincode::config::standard())?;
+        let (graph, _) = bincode::serde::decode_from_slice(&data, bincode::config::standard())?;
         Ok(Some(graph))
     }
 }

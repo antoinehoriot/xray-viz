@@ -5,10 +5,10 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use rusqlite::{Connection, params};
+    use crate::scanner::{ClassDecl, FunctionDecl, ImportDecl, ImportKind};
+    use rusqlite::{params, Connection};
     use serde::{Deserialize, Serialize};
     use std::path::Path;
-    use crate::scanner::{ClassDecl, FunctionDecl, ImportDecl, ImportKind};
 
     #[derive(Debug, Serialize, Deserialize)]
     struct CachedImport {
@@ -122,7 +122,8 @@ mod native {
         pub fn get_functions(
             &self,
             file_hash: &str,
-        ) -> Result<Option<(Vec<FunctionDecl>, Vec<ClassDecl>)>, Box<dyn std::error::Error>> {
+        ) -> Result<Option<(Vec<FunctionDecl>, Vec<ClassDecl>)>, Box<dyn std::error::Error>>
+        {
             let mut stmt = self.conn.prepare(
                 "SELECT functions_json, classes_json FROM file_functions WHERE file_hash = ?1",
             )?;

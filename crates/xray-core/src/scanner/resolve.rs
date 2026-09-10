@@ -189,7 +189,11 @@ fn find_crate_src(file_dir: &str, known_paths: &HashSet<String>) -> Option<Strin
 
 /// Resolve Python relative imports (specifiers starting with `.`).
 /// Absolute imports (external packages) return None.
-fn resolve_python(specifier: &str, file_dir: &str, known_paths: &HashSet<String>) -> Option<String> {
+fn resolve_python(
+    specifier: &str,
+    file_dir: &str,
+    known_paths: &HashSet<String>,
+) -> Option<String> {
     if !specifier.starts_with('.') {
         return None; // stdlib or third-party package
     }

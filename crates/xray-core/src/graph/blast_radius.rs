@@ -113,10 +113,7 @@ mod tests {
     #[test]
     fn test_blast_radius_transitive() {
         // a → b → c
-        let g = make_graph(
-            &["a", "b", "c"],
-            vec![edge("a", "b"), edge("b", "c")],
-        );
+        let g = make_graph(&["a", "b", "c"], vec![edge("a", "b"), edge("b", "c")]);
         let deps = blast_radius(&g, &"a".to_string());
         assert!(deps.contains(&"b".to_string()));
         assert!(deps.contains(&"c".to_string()));
@@ -142,10 +139,7 @@ mod tests {
     #[test]
     fn test_reverse_deps_transitive() {
         // a → b → c; reverse of c gives {a, b}
-        let g = make_graph(
-            &["a", "b", "c"],
-            vec![edge("a", "b"), edge("b", "c")],
-        );
+        let g = make_graph(&["a", "b", "c"], vec![edge("a", "b"), edge("b", "c")]);
         let rev = reverse_deps(&g, &"c".to_string());
         assert!(rev.contains(&"a".to_string()));
         assert!(rev.contains(&"b".to_string()));

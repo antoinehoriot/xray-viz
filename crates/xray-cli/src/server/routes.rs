@@ -15,12 +15,17 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::{Html, IntoResponse, Response},
     response::sse::{Event, KeepAlive, Sse},
+    response::{Html, IntoResponse, Response},
     routing::get,
     Json, Router,
 };
-use std::{collections::HashMap, convert::Infallible, path::PathBuf, sync::{Arc, RwLock}};
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 use tokio::sync::broadcast;
 use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
@@ -52,14 +57,17 @@ pub fn build_router(state: AppState, web_dist: Option<PathBuf>) -> Router {
         .route("/api/graph", get(get_graph))
         .route("/api/functions", get(get_functions))
         .route("/api/events", get(events))
-        .route("/api/annotations", get(get_annotations).put(put_annotations))
+        .route(
+            "/api/annotations",
+            get(get_annotations).put(put_annotations),
+        )
         .with_state(state);
 
     // Static file serving (no state needed).
     match web_dist {
-        Some(dir) => base.fallback_service(
-            ServeDir::new(dir).append_index_html_on_directories(true),
-        ),
+        Some(dir) => {
+            base.fallback_service(ServeDir::new(dir).append_index_html_on_directories(true))
+        }
         None => base.fallback(serve_fallback),
     }
 }
@@ -72,11 +80,7 @@ async fn health() -> &'static str {
 
 async fn get_graph(State(state): State<AppState>) -> Response {
     let json = state.graph_json.read().unwrap().clone();
-    (
-        [("content-type", "application/json")],
-        json,
-    )
-        .into_response()
+    ([("content-type", "application/json")], json).into_response()
 }
 
 /// GET /api/functions?file=<relative_path>
@@ -104,11 +108,7 @@ async fn get_functions(
     };
     let functions = state.functions.read().unwrap();
     match functions.get(&file) {
-        Some(data) => (
-            [("content-type", "application/json")],
-            data.to_string(),
-        )
-            .into_response(),
+        Some(data) => ([("content-type", "application/json")], data.to_string()).into_response(),
         None => (StatusCode::NOT_FOUND, format!("file not found: {file}")).into_response(),
     }
 }
@@ -155,10 +155,7 @@ async fn get_annotations(State(state): State<AppState>) -> Response {
 ///
 /// Pro-gated. Replaces the full annotation map with the JSON body.
 /// Body: `{ "<node_path>": { "team": "...", "domain": "...", "status": "..." } }`
-async fn put_annotations(
-    State(state): State<AppState>,
-    Json(body): Json<Annotations>,
-) -> Response {
+async fn put_annotations(State(state): State<AppState>, Json(body): Json<Annotations>) -> Response {
     if !license::is_pro() {
         return (
             StatusCode::PAYMENT_REQUIRED,

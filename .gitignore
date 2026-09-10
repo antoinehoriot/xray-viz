@@ -2,16 +2,45 @@
 target/
 web/dist/
 web/node_modules/
+crates/xray-wasm/pkg/
 
-# Xray cache
+# Test, coverage, and logs
+coverage/
+*.profraw
+*.log
+
+# Xray local scan data
 .xray/
-crates/.xray/
+**/.xray/cache.db
+**/.xray/graph.bin
+**/.xray/*.db
+**/.xray/*.db-*
+
+# Local secrets and environment files
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+!.env.example
+
+# Local editor/tool settings
+.vscode/
+.idea/
+.claude/settings.local.json
 
 # Overstory runtime files
 .overstory/groups.json
 .overstory/worktrees/
 .overstory/sessions.json
 .overstory/mail.db
+.overstory/*.db
+.overstory/*.db-*
+.overstory/*-state.json
+.overstory/*.pid
+.overstory/run-complete-notified.txt
 
-# macOS
+# OS files
 .DS_Store
+Thumbs.db

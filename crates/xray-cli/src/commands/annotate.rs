@@ -63,10 +63,18 @@ pub fn run(args: AnnotateArgs) -> Result<(), Box<dyn std::error::Error>> {
             entries.sort_by_key(|(k, _)| k.as_str());
             for (path, node_ann) in entries {
                 let mut parts: Vec<String> = Vec::new();
-                if let Some(t) = &node_ann.team { parts.push(format!("team={t}")); }
-                if let Some(d) = &node_ann.domain { parts.push(format!("domain={d}")); }
-                if let Some(s) = &node_ann.status { parts.push(format!("status={s}")); }
-                if !node_ann.tags.is_empty() { parts.push(format!("tags={}", node_ann.tags.join(","))); }
+                if let Some(t) = &node_ann.team {
+                    parts.push(format!("team={t}"));
+                }
+                if let Some(d) = &node_ann.domain {
+                    parts.push(format!("domain={d}"));
+                }
+                if let Some(s) = &node_ann.status {
+                    parts.push(format!("status={s}"));
+                }
+                if !node_ann.tags.is_empty() {
+                    parts.push(format!("tags={}", node_ann.tags.join(",")));
+                }
                 println!("{path}: {}", parts.join("  "));
             }
         }
@@ -96,7 +104,8 @@ pub fn run(args: AnnotateArgs) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    if args.team.is_none() && args.domain.is_none() && args.status.is_none() && args.tags.is_none() {
+    if args.team.is_none() && args.domain.is_none() && args.status.is_none() && args.tags.is_none()
+    {
         return Err("Provide at least one of --team, --domain, --status, --tags".into());
     }
 

@@ -11,6 +11,7 @@ const QUERY_SRC: &str = include_str!("../../../../../grammars/java.scm");
 
 /// Parse Java source into a FileAst using tree-sitter.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::collapsible_match)]
 pub fn parse(source: &str, path: &str) -> FileAst {
     let language = tree_sitter_java::language();
 
@@ -75,7 +76,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                 "import.specifier" => {
                     // Java: `import com.example.Foo;` → specifier is `com.example.Foo`
                     let specifier = text.to_string();
-                    if !imports.iter().any(|i: &ImportDecl| i.specifier == specifier) {
+                    if !imports
+                        .iter()
+                        .any(|i: &ImportDecl| i.specifier == specifier)
+                    {
                         imports.push(ImportDecl {
                             specifier,
                             resolved_path: None,
@@ -87,7 +91,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                 }
                 "class.name" | "interface.name" => {
                     // Java classes and interfaces both modelled as ClassDecl
-                    if !classes.iter().any(|c: &ClassDecl| c.name == text && c.line_start == line) {
+                    if !classes
+                        .iter()
+                        .any(|c: &ClassDecl| c.name == text && c.line_start == line)
+                    {
                         classes.push(ClassDecl {
                             name: text.to_string(),
                             line_start: line,
@@ -96,7 +103,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                     }
                 }
                 "method.name" => {
-                    if !functions.iter().any(|f: &FunctionDecl| f.name == text && f.line_start == line) {
+                    if !functions
+                        .iter()
+                        .any(|f: &FunctionDecl| f.name == text && f.line_start == line)
+                    {
                         functions.push(FunctionDecl {
                             name: text.to_string(),
                             line_start: line,

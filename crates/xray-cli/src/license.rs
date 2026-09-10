@@ -67,9 +67,7 @@ pub fn remove_license() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Returns `true` when a valid Pro license key is stored.
 pub fn is_pro() -> bool {
-    get_license()
-        .map(|k| is_valid_key(&k))
-        .unwrap_or(false)
+    get_license().map(|k| is_valid_key(&k)).unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -142,7 +140,11 @@ mod tests {
         let path = base.join(".xray").join("license.key");
         let content = fs::read_to_string(path).ok()?;
         let s = content.trim().to_string();
-        if s.is_empty() { None } else { Some(s) }
+        if s.is_empty() {
+            None
+        } else {
+            Some(s)
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use clap::Args;
 use indicatif::{ProgressBar, ProgressStyle};
-use std::time::Instant;
 use std::collections::HashSet;
+use std::time::Instant;
 use xray_core::{
     cache::{db::CacheDb, graph_bin},
     detect_language,
@@ -204,10 +204,23 @@ pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
         } else {
             eprintln!("Found {} circular dependencies:", cycles.len());
             for (i, cycle) in cycles.iter().enumerate() {
-                let paths: Vec<&str> = cycle.nodes.iter()
-                    .filter_map(|id| graph.nodes.iter().find(|n| &n.id == id).map(|n| n.path.as_str()))
+                let paths: Vec<&str> = cycle
+                    .nodes
+                    .iter()
+                    .filter_map(|id| {
+                        graph
+                            .nodes
+                            .iter()
+                            .find(|n| &n.id == id)
+                            .map(|n| n.path.as_str())
+                    })
                     .collect();
-                eprintln!("  {}. {} -> {}", i + 1, paths.join(" -> "), paths.first().unwrap_or(&"?"));
+                eprintln!(
+                    "  {}. {} -> {}",
+                    i + 1,
+                    paths.join(" -> "),
+                    paths.first().unwrap_or(&"?")
+                );
             }
         }
     }
@@ -221,13 +234,19 @@ pub fn run(args: ScanArgs) -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("No orphan files detected.");
         } else {
             if !dead.is_empty() {
-                eprintln!("Found {} orphan file(s) (zero importers, dead code candidates):", dead.len());
+                eprintln!(
+                    "Found {} orphan file(s) (zero importers, dead code candidates):",
+                    dead.len()
+                );
                 for o in &dead {
                     eprintln!("  {}", o.path);
                 }
             }
             if !entry_orphans.is_empty() {
-                eprintln!("Found {} entry-point file(s) with no importers (expected):", entry_orphans.len());
+                eprintln!(
+                    "Found {} entry-point file(s) with no importers (expected):",
+                    entry_orphans.len()
+                );
                 for o in &entry_orphans {
                     eprintln!("  {} [entry point]", o.path);
                 }

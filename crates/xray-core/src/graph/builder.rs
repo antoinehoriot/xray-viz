@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use petgraph::stable_graph::{NodeIndex, StableGraph};
 use petgraph::Directed;
 
-use crate::graph::types::{Edge, EdgeKind, GraphStats, Node, NodeId, NodeKind, NodeMetadata, XrayGraph};
+use crate::graph::types::{
+    Edge, EdgeKind, GraphStats, Node, NodeId, NodeKind, NodeMetadata, XrayGraph,
+};
 use crate::scanner::{FileAst, ImportKind};
 
 /// Generate a stable NodeId from a file path: blake3 hash, first 16 hex chars.
@@ -453,7 +455,7 @@ mod tests {
         // 1 file + 1 function + 1 class = 3 nodes
         assert_eq!(graph.nodes.len(), 3);
         assert_eq!(graph.stats.function_count, 2); // function + class
-        // 2 Contains edges (file→function, file→class)
+                                                   // 2 Contains edges (file→function, file→class)
         assert_eq!(graph.edges.len(), 2);
         assert!(graph.edges.iter().all(|e| e.kind == EdgeKind::Contains));
     }

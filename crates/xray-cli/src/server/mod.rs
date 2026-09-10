@@ -27,9 +27,7 @@ impl BoundServer {
 ///
 /// Returns the successfully bound server so the caller can discover the actual port
 /// before opening the browser.
-pub async fn bind(
-    port: u16,
-) -> Result<BoundServer, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn bind(port: u16) -> Result<BoundServer, Box<dyn std::error::Error + Send + Sync>> {
     for p in port..=port.saturating_add(10) {
         match tokio::net::TcpListener::bind(format!("127.0.0.1:{p}")).await {
             Ok(listener) => {

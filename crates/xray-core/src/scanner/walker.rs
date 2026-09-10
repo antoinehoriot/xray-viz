@@ -61,15 +61,18 @@ mod tests {
 
     #[test]
     fn test_walk_fixtures() {
-        let fixtures_dir = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tests/fixtures"
-        );
+        let fixtures_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../tests/fixtures");
         let asts = walk(fixtures_dir);
-        assert!(!asts.is_empty(), "expected at least one FileAst from fixtures");
+        assert!(
+            !asts.is_empty(),
+            "expected at least one FileAst from fixtures"
+        );
 
         let languages: Vec<&str> = asts.iter().map(|a| a.language.as_str()).collect();
-        assert!(languages.contains(&"typescript"), "expected TypeScript files");
+        assert!(
+            languages.contains(&"typescript"),
+            "expected TypeScript files"
+        );
         assert!(languages.contains(&"python"), "expected Python files");
         assert!(languages.contains(&"rust"), "expected Rust files");
     }
@@ -77,6 +80,9 @@ mod tests {
     #[test]
     fn test_walk_nonexistent() {
         let asts = walk("/nonexistent/path/that/does/not/exist");
-        assert!(asts.is_empty(), "nonexistent path should yield empty result");
+        assert!(
+            asts.is_empty(),
+            "nonexistent path should yield empty result"
+        );
     }
 }

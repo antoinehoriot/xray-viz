@@ -5,7 +5,11 @@ mod license;
 mod server;
 
 #[derive(Parser)]
-#[command(name = "xray", version, about = "Interactive codebase architecture visualizer")]
+#[command(
+    name = "xray",
+    version,
+    about = "Interactive codebase architecture visualizer"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,

@@ -20,8 +20,15 @@ pub struct ForceState {
 impl ForceState {
     /// Create initial state for a graph with `n` nodes.
     pub fn new(n: usize) -> Self {
-        let temperature = if n == 0 { 1.0 } else { (n as f32).sqrt() * 50.0 };
-        Self { temperature, tick: 0 }
+        let temperature = if n == 0 {
+            1.0
+        } else {
+            (n as f32).sqrt() * 50.0
+        };
+        Self {
+            temperature,
+            tick: 0,
+        }
     }
 }
 
@@ -81,9 +88,7 @@ pub fn tick(graph: &XrayGraph, positions: &mut Vec<f32>, state: &mut ForceState)
             let vy = positions[v * 2 + 1];
             let delta_x = ux - vx;
             let delta_y = uy - vy;
-            let dist = (delta_x * delta_x + delta_y * delta_y)
-                .sqrt()
-                .max(MIN_DIST);
+            let dist = (delta_x * delta_x + delta_y * delta_y).sqrt().max(MIN_DIST);
             let force = k2 / dist;
             let fx = delta_x / dist * force;
             let fy = delta_y / dist * force;
@@ -115,9 +120,7 @@ pub fn tick(graph: &XrayGraph, positions: &mut Vec<f32>, state: &mut ForceState)
         }
         let delta_x = positions[u * 2] - positions[v * 2];
         let delta_y = positions[u * 2 + 1] - positions[v * 2 + 1];
-        let dist = (delta_x * delta_x + delta_y * delta_y)
-            .sqrt()
-            .max(MIN_DIST);
+        let dist = (delta_x * delta_x + delta_y * delta_y).sqrt().max(MIN_DIST);
         let force = dist * dist / k;
         let fx = delta_x / dist * force;
         let fy = delta_y / dist * force;

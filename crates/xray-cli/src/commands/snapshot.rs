@@ -394,7 +394,8 @@ fn render_snapshot_html(title: &str, graph_json: &str) -> String {
 "#,
         safe_title = safe_title,
         graph_json = graph_json,
-        title_json = serde_json::to_string(title).unwrap_or_else(|_| "\"Xray Snapshot\"".to_string()),
+        title_json =
+            serde_json::to_string(title).unwrap_or_else(|_| "\"Xray Snapshot\"".to_string()),
     )
 }
 

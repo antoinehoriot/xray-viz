@@ -11,6 +11,7 @@ const QUERY_SRC: &str = include_str!("../../../../../grammars/rust.scm");
 
 /// Parse Rust source into a FileAst using tree-sitter.
 #[cfg(not(target_arch = "wasm32"))]
+#[allow(clippy::collapsible_match)]
 pub fn parse(source: &str, path: &str) -> FileAst {
     let language = tree_sitter_rust::language();
 
@@ -104,7 +105,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                     });
                 }
                 "function.name" => {
-                    if !functions.iter().any(|f| f.name == text && f.line_start == line) {
+                    if !functions
+                        .iter()
+                        .any(|f| f.name == text && f.line_start == line)
+                    {
                         functions.push(FunctionDecl {
                             name: text.to_string(),
                             line_start: line,
@@ -117,7 +121,10 @@ pub fn parse(source: &str, path: &str) -> FileAst {
                 }
                 "struct.name" | "enum.name" | "trait.name" => {
                     // Rust types modelled as classes in the IR
-                    if !classes.iter().any(|c| c.name == text && c.line_start == line) {
+                    if !classes
+                        .iter()
+                        .any(|c| c.name == text && c.line_start == line)
+                    {
                         classes.push(ClassDecl {
                             name: text.to_string(),
                             line_start: line,
