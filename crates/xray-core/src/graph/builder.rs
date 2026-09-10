@@ -1,11 +1,15 @@
+#[cfg(not(target_arch = "wasm32"))]
 use std::collections::HashMap;
 
+#[cfg(not(target_arch = "wasm32"))]
 use petgraph::stable_graph::{NodeIndex, StableGraph};
+#[cfg(not(target_arch = "wasm32"))]
 use petgraph::Directed;
 
-use crate::graph::types::{
-    Edge, EdgeKind, GraphStats, Node, NodeId, NodeKind, NodeMetadata, XrayGraph,
-};
+use crate::graph::types::{Edge, GraphStats, Node, NodeKind, XrayGraph};
+#[cfg(not(target_arch = "wasm32"))]
+use crate::graph::types::{EdgeKind, NodeId, NodeMetadata};
+#[cfg(not(target_arch = "wasm32"))]
 use crate::scanner::{FileAst, ImportKind};
 
 /// Generate a stable NodeId from a file path: blake3 hash, first 16 hex chars.
@@ -17,6 +21,7 @@ pub fn node_id_from_path(path: &str) -> NodeId {
 }
 
 /// Heuristic entry-point detection by filename.
+#[cfg(not(target_arch = "wasm32"))]
 fn is_entry_point(path: &str) -> bool {
     let name = std::path::Path::new(path)
         .file_name()

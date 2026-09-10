@@ -16,6 +16,11 @@ categories.workspace = true
 name = "xray_wasm"
 crate-type = ["cdylib"]
 
+[package.metadata.wasm-pack.profile.release]
+# wasm-pack's bundled wasm-opt can lag Rust's default wasm32 features
+# (bulk-memory/nontrapping-fptoint), causing CI validation failures.
+wasm-opt = false
+
 [dependencies]
 xray-core = { path = "../xray-core" }
 wasm-bindgen = { workspace = true }
