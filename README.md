@@ -2,6 +2,8 @@
 
 Xray is a fast, local-first codebase architecture visualizer. It scans a repository with tree-sitter, builds dependency graphs, and serves an interactive browser UI from a Rust CLI.
 
+![Xray mapping its own repository: file-level dependency graph, with cycle and orphan counts in the status bar](docs/assets/xray-graph.webp)
+
 ## Highlights
 
 - **Offline by default** — source code is scanned locally and is not sent to external services.
@@ -85,8 +87,26 @@ crates/xray-wasm/   WebAssembly bindings for browser graph operations
 web/                TypeScript/Sigma.js browser UI
 grammars/           Tree-sitter queries
 tests/fixtures/     Language parser fixtures
-docs/               Roadmap and planning docs
+docs/               Spec, brief, roadmap and planning docs
 ```
+
+## How this was built
+
+Xray is also an experiment in agentic development. It was specified, planned and
+built with Claude Code driving a small team of agents, and the coordination state
+is committed on purpose so the process can be inspected, not just the result.
+
+| Path | Tool | What it holds |
+|---|---|---|
+| [`docs/BRIEF.md`](docs/BRIEF.md), [`docs/SPEC.md`](docs/SPEC.md) | | The problem statement and the technical spec the agents built from |
+| [`.seeds/`](.seeds/) | [seeds](https://github.com/jayminwest/seeds) | The issue tracker: 28 tasks and bugs, from architecture research to fixes, all closed |
+| [`.mulch/`](.mulch/) | [mulch](https://github.com/jayminwest/mulch) | 77 expertise records (conventions, decisions, failures) that agents load at the start of a session and append to before finishing |
+| [`.overstory/`](.overstory/) | [overstory](https://github.com/jayminwest/overstory) | Multi-agent orchestration: scout, builder, reviewer, lead, merger, coordinator and monitor roles working in separate git worktrees |
+| [`.canopy/`](.canopy/) | [canopy](https://github.com/jayminwest/canopy) | Prompt registry (set up, currently empty) |
+| [`CLAUDE.md`](CLAUDE.md), [`AGENTS.md`](AGENTS.md) | | Instructions every agent session starts from |
+
+The human part: choosing the problem, reviewing the spec, setting the quality gates
+(`fmt`, `clippy -D warnings`, tests, CI) and deciding what ships.
 
 ## Development
 

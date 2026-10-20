@@ -1128,7 +1128,7 @@ codebase-viz/
 │   └── e2e/                 # Playwright tests
 ├── benches/                 # criterion benchmarks (workspace-level)
 │   └── scan_bench.rs
-└── SPEC.md                  # this file
+└── docs/SPEC.md             # this file
 ```
 
 ---
