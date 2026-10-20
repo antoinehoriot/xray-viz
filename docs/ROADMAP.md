@@ -76,17 +76,12 @@
 |---|---|---|
 | **xray view** | Done | Scan + serve + auto-open browser (default command) |
 | **xray scan** | Done | Parse-only, output JSON or DOT, with --pretty/--stats flags |
-| **xray export** | Done | AI context export (Pro-gated) with subgraph extraction |
+| **xray export** | Done | AI context export with subgraph extraction |
 | **AI JSON export** | Done | Structured AiExportJson with dependency order, entry node, summary |
 | **AI Markdown export** | Done | Human-readable with dependency tree, file index, dependency matrix |
 | **Subgraph extraction** | Done | BFS from starting node with depth limit, direction, max-nodes cap |
 | **Topological sort** | Done | Kahn algorithm for dependency ordering in exports |
-| **xray license activate** | Done | Offline XRAY-XXXX-XXXX key validation, stored at ~/.xray/license.key |
-| **xray license status** | Done | Show active/inactive with key redaction |
-| **xray license deactivate** | Done | Remove stored key |
-| **Pro gate (CLI)** | Done | is_pro() check before export command |
-| **Pro gate (Web)** | Done | Modal prompt + localStorage key storage + 402 API response |
-| **DEV_MODE bypass** | Done | const DEV_MODE = true flag to skip Pro gate in development |
+| **Pro license gate** | Removed (2026-10-20) | Offline key check, `xray license`, web modal and 402 responses. Xray is MIT and every feature is free; the format-only check protected nothing and broke the Fn view. Background: `docs/plans/2026-03-01-license-server-research.md`. Reopen only with a real paid offer and server-side validation |
 | **Graphviz DOT output** | Done | to_dot() for external rendering |
 | **Progress spinner** | Done | indicatif spinner during scan |
 | **axum HTTP server** | Done | Routes: /health, /api/graph, /api/functions, static files |
@@ -112,7 +107,7 @@
 | **C/C++ language support** | P3 | — | Add #include parsing via tree-sitter-c and tree-sitter-cpp |
 | **PHP/Ruby/Swift support** | P4 | — | Extend language coverage for broader adoption |
 
-### Pro Tier Features
+### Advanced Features
 
 | Feature | Priority | Inspiration | Description |
 |---|---|---|---|
@@ -143,8 +138,6 @@
 ### Must-Have for v1.0 Release
 
 - [ ] **Implement watch mode** — --watch flag is accepted but does nothing. Wire up notify crate to re-scan on file changes and push updates to the browser (WebSocket or SSE)
-- [ ] **License server** — Currently offline-only validation with simple format check. Implement a license validation server for production key management (key generation, expiry, seat limits)
-- [ ] **Remove DEV_MODE flag** — const DEV_MODE = true in web/src/main.ts bypasses Pro gate. Must be false before release
 - [ ] **Cargo test CI** — Ensure cargo test --workspace runs in CI for all crates
 - [ ] **Web build CI** — Add cd web && bun install && bun run build to CI pipeline
 - [ ] **Binary releases** — Set up cross-compilation and GitHub Releases for macOS, Linux, Windows binaries

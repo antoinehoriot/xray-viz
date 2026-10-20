@@ -16,8 +16,6 @@ use xray_core::{
     },
 };
 
-use crate::license;
-
 #[derive(Args)]
 pub struct ExportArgs {
     /// Root directory
@@ -44,10 +42,6 @@ pub struct ExportArgs {
 }
 
 pub fn run(args: ExportArgs) -> Result<(), Box<dyn std::error::Error>> {
-    if !license::is_pro() {
-        eprintln!("License required. Run: xray license activate <key>");
-        std::process::exit(4);
-    }
     let root = std::path::Path::new(&args.path).canonicalize()?;
     let cache_dir = root.join(".xray");
     std::fs::create_dir_all(&cache_dir)?;

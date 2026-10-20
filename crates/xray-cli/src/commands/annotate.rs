@@ -1,12 +1,8 @@
 //! `xray annotate` — read and write node annotations stored in
 //! `.xray/annotations.yml`.
-//!
-//! Pro-gated. Requires a valid license key stored at `~/.xray/license.key`.
 
 use clap::Args;
 use xray_core::annotations::{self, NodeAnnotation};
-
-use crate::license;
 
 #[derive(Args)]
 pub struct AnnotateArgs {
@@ -44,11 +40,6 @@ pub struct AnnotateArgs {
 }
 
 pub fn run(args: AnnotateArgs) -> Result<(), Box<dyn std::error::Error>> {
-    if !license::is_pro() {
-        eprintln!("License required. Run: xray license activate <key>");
-        std::process::exit(4);
-    }
-
     let root = std::path::Path::new(&args.path)
         .canonicalize()
         .unwrap_or_else(|_| std::path::PathBuf::from(&args.path));

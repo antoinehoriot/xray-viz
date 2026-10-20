@@ -3,8 +3,6 @@
 //! Scans the codebase (using cached `.xray/graph.bin` if available), then
 //! writes a single `.html` file that embeds the full graph JSON and loads
 //! Sigma.js v3 + graphology from CDN for offline-capable rendering.
-//!
-//! Pro-gated. Requires a valid license key stored at `~/.xray/license.key`.
 
 use clap::Args;
 use std::collections::HashSet;
@@ -19,8 +17,6 @@ use xray_core::{
         ExportDecl, FileAst,
     },
 };
-
-use crate::license;
 
 #[derive(Args)]
 pub struct SnapshotArgs {
@@ -38,11 +34,6 @@ pub struct SnapshotArgs {
 }
 
 pub fn run(args: SnapshotArgs) -> Result<(), Box<dyn std::error::Error>> {
-    if !license::is_pro() {
-        eprintln!("License required. Run: xray license activate <key>");
-        std::process::exit(4);
-    }
-
     let root = std::path::Path::new(&args.path)
         .canonicalize()
         .unwrap_or_else(|_| std::path::PathBuf::from(&args.path));

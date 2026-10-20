@@ -68,8 +68,6 @@ notify = "6"
 # WASM
 wasm-bindgen = "0.2"
 
-# Home directory
-dirs = "5"
 
 # Logging
 tracing = "0.1"

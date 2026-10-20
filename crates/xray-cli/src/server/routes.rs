@@ -5,8 +5,8 @@
 //!   GET /api/graph                     — full XrayGraph JSON
 //!   GET /api/functions?file=<path>     — lazy function-level subgraph for a file
 //!   GET /api/events                    — SSE stream for hot-reload (--watch mode)
-//!   GET /api/annotations               — read node annotations (Pro)
-//!   PUT /api/annotations               — write node annotations (Pro)
+//!   GET /api/annotations               — read node annotations
+//!   PUT /api/annotations               — write node annotations
 //!   GET /*                             — static file serving from web/dist (if present),
 //!                                        otherwise a minimal inline fallback UI
 //!
@@ -31,8 +31,6 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::StreamExt as _;
 use tower_http::services::ServeDir;
 use xray_core::annotations::{self, Annotations};
-
-use crate::license;
 
 /// Combined application state shared across all routes.
 #[derive(Clone)]
@@ -85,21 +83,12 @@ async fn get_graph(State(state): State<AppState>) -> Response {
 
 /// GET /api/functions?file=<relative_path>
 ///
-/// Pro-gated endpoint. Returns the function-level subgraph for a single file:
+/// Returns the function-level subgraph for a single file:
 /// `{ "file": "...", "functions": [...], "classes": [...] }`
-///
-/// Returns 402 Payment Required when no valid Pro license is stored.
 async fn get_functions(
     State(state): State<AppState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
-    if !license::is_pro() {
-        return (
-            StatusCode::PAYMENT_REQUIRED,
-            "Pro license required. Run: xray license activate <key>",
-        )
-            .into_response();
-    }
     let file = match params.get("file") {
         Some(f) => f.clone(),
         None => {
@@ -130,17 +119,9 @@ async fn events(
 
 /// GET /api/annotations
 ///
-/// Pro-gated. Returns all node annotations as JSON:
+/// Returns all node annotations as JSON:
 /// `{ "src/main.ts": { "team": "platform", "domain": "core" }, ... }`
 async fn get_annotations(State(state): State<AppState>) -> Response {
-    if !license::is_pro() {
-        return (
-            StatusCode::PAYMENT_REQUIRED,
-            "Pro license required. Run: xray license activate <key>",
-        )
-            .into_response();
-    }
-
     match annotations::load(&state.root) {
         Ok(ann) => Json(ann).into_response(),
         Err(e) => (
@@ -153,17 +134,9 @@ async fn get_annotations(State(state): State<AppState>) -> Response {
 
 /// PUT /api/annotations
 ///
-/// Pro-gated. Replaces the full annotation map with the JSON body.
+/// Replaces the full annotation map with the JSON body.
 /// Body: `{ "<node_path>": { "team": "...", "domain": "...", "status": "..." } }`
 async fn put_annotations(State(state): State<AppState>, Json(body): Json<Annotations>) -> Response {
-    if !license::is_pro() {
-        return (
-            StatusCode::PAYMENT_REQUIRED,
-            "Pro license required. Run: xray license activate <key>",
-        )
-            .into_response();
-    }
-
     match annotations::save(&state.root, &body) {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(e) => (

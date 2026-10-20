@@ -31,7 +31,6 @@ webbrowser = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 blake3 = { workspace = true }
-dirs = { workspace = true }
 ignore = { workspace = true }
 notify = { workspace = true }
 tokio-stream = { version = "0.1", features = ["sync"] }

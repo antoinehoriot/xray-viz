@@ -30,8 +30,6 @@ import {
   hideAnnotationEditor,
 } from "./panels";
 
-const DEV_MODE = true;
-
 const DIM_COLOR = "#1e293b";
 const HOVER_BG = "#1a1d27";
 
@@ -62,54 +60,11 @@ const highlight: HighlightState = {
   directoryNodes: null,
 };
 
-// ── Pro license ───────────────────────────────────────────────────────────────
+// ── Keyboard ──────────────────────────────────────────────────────────────────
 
-function getLicenseKey(): string | null {
-  return localStorage.getItem("xray_pro_key");
-}
-
-function setLicenseKey(key: string): void {
-  localStorage.setItem("xray_pro_key", key);
-}
-
-function showProGateModal(): void {
-  const overlay = document.getElementById("pro-gate-overlay");
-  if (overlay) overlay.style.display = "flex";
-  const input = document.getElementById("pro-key-input") as HTMLInputElement | null;
-  if (input) input.value = "";
-}
-
-function hideProGateModal(): void {
-  const overlay = document.getElementById("pro-gate-overlay");
-  if (overlay) overlay.style.display = "none";
-}
-
-function setupProGate(): void {
-  const submitBtn = document.getElementById("pro-key-submit");
-  const closeBtn = document.getElementById("pro-gate-close");
-  const overlay = document.getElementById("pro-gate-overlay");
-
-  submitBtn?.addEventListener("click", () => {
-    const input = document.getElementById("pro-key-input") as HTMLInputElement | null;
-    const key = input?.value.trim() ?? "";
-    if (!key) return;
-    setLicenseKey(key);
-    hideProGateModal();
-    // Switch to Fn mode now that we have a key
-    activateFnMode();
-  });
-
-  closeBtn?.addEventListener("click", hideProGateModal);
-
-  overlay?.addEventListener("click", (e) => {
-    if (e.target === overlay) hideProGateModal();
-  });
-
+function setupKeyboard(): void {
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      hideProGateModal();
-      hideAnnotationEditor();
-    }
+    if (e.key === "Escape") hideAnnotationEditor();
   });
 }
 
@@ -279,18 +234,12 @@ async function expandFileNode(fileId: string): Promise<void> {
   const nodeData = engine.getNode(fileId);
   if (!nodeData) return;
 
-  const licenseKey = DEV_MODE ? null : getLicenseKey();
-  const url = `/api/functions?file=${encodeURIComponent(nodeData.path)}${licenseKey ? `&license=${encodeURIComponent(licenseKey)}` : ""}`;
+  const url = `/api/functions?file=${encodeURIComponent(nodeData.path)}`;
 
   let functions: FunctionInfo[];
 
   try {
     const resp = await fetch(url);
-
-    if (!DEV_MODE && resp.status === 402) {
-      showProGateModal();
-      return;
-    }
 
     if (resp.ok) {
       const body = (await resp.json()) as {
@@ -742,7 +691,7 @@ async function init(): Promise<void> {
       loading.textContent = `No graph loaded. Run \`xray .\` to scan your codebase. (HTTP ${resp.status})`;
       setupModeToggle();
       setupLayoutToggle();
-      setupProGate();
+      setupKeyboard();
       setupExport();
       return;
     }
@@ -757,7 +706,7 @@ async function init(): Promise<void> {
     setupSearch();
     setupModeToggle();
     setupLayoutToggle();
-    setupProGate();
+    setupKeyboard();
     setupCycles();
     setupOrphans();
     setupDirectoryPanel();
@@ -791,13 +740,7 @@ function setupModeToggle(): void {
       if (mode === currentMode) return;
 
       if (mode === "function") {
-        if (!DEV_MODE && !getLicenseKey()) {
-          showProGateModal();
-          return;
-        }
-        document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
-        target.classList.add("active");
-        currentMode = "function";
+        activateFnMode();
       } else {
         document.querySelectorAll(".mode-btn").forEach((b) => b.classList.remove("active"));
         target.classList.add("active");
